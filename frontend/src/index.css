@@ -1,0 +1,320 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: Arial, Helvetica, sans-serif;
+  background: #f4f7fb;
+  color: #172033;
+}
+
+.dashboard {
+  min-height: 100vh;
+  padding: 30px;
+}
+
+.header {
+  max-width: 1400px;
+  margin: auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+}
+
+.header h1 {
+  font-size: 30px;
+  margin-bottom: 7px;
+}
+
+.header p {
+  color: #697386;
+}
+
+.connection {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: bold;
+}
+
+.connection span {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.connection.online {
+  color: #198754;
+}
+
+.connection.online span {
+  background: #198754;
+}
+
+.connection.offline {
+  color: #dc3545;
+}
+
+.connection.offline span {
+  background: #dc3545;
+}
+
+main {
+  max-width: 1400px;
+  margin: auto;
+}
+
+.overview {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  gap: 20px;
+}
+
+.card {
+  background: white;
+  border: 1px solid #e2e7ef;
+  border-radius: 14px;
+  padding: 24px;
+}
+
+.crowd-card {
+  min-height: 330px;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 15px;
+}
+
+.label {
+  font-size: 12px;
+  font-weight: bold;
+  color: #7b8494;
+  letter-spacing: 1px;
+  margin-bottom: 7px;
+}
+
+.card h2 {
+  font-size: 18px;
+}
+
+.status-badge {
+  height: fit-content;
+  padding: 7px 12px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: bold;
+}
+
+.status-badge.normal {
+  background: #e7f7ee;
+  color: #198754;
+}
+
+.status-badge.danger {
+  background: #fde9e9;
+  color: #dc3545;
+}
+
+.crowd-number {
+  font-size: 76px;
+  font-weight: 700;
+  margin-top: 25px;
+  line-height: 1;
+}
+
+.people-text {
+  color: #697386;
+  font-size: 13px;
+  margin-top: 8px;
+}
+
+.progress-container {
+  margin-top: 30px;
+}
+
+.progress-info {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  margin-bottom: 8px;
+  color: #697386;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 9px;
+  background: #e9edf3;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: #198754;
+  border-radius: 10px;
+  transition: width 0.3s ease;
+}
+
+.danger-fill {
+  background: #dc3545;
+}
+
+.last-update {
+  margin-top: 16px;
+  font-size: 12px;
+  color: #8a93a2;
+}
+
+.metric-value {
+  font-size: 32px;
+  font-weight: bold;
+  margin-top: 30px;
+}
+
+.metric-status {
+  display: inline-block;
+  margin-top: 10px;
+  padding: 5px 9px;
+  border-radius: 5px;
+  background: #eef1f5;
+  color: #667085;
+  font-size: 10px;
+  font-weight: bold;
+}
+
+.coming-soon {
+  margin-top: 20px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #7b8494;
+}
+
+.bottom-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 20px;
+  margin-top: 20px;
+}
+
+.section-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.live-indicator {
+  font-size: 11px;
+  font-weight: bold;
+  color: #198754;
+}
+
+.alert {
+  margin-top: 25px;
+  display: flex;
+  gap: 15px;
+  align-items: center;
+  padding: 17px;
+  border-radius: 10px;
+}
+
+.normal-alert {
+  background: #edf8f2;
+}
+
+.danger-alert {
+  background: #fff0f0;
+}
+
+.alert-icon {
+  width: 35px;
+  height: 35px;
+  border-radius: 50%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-weight: bold;
+  background: white;
+}
+
+.alert strong {
+  font-size: 14px;
+}
+
+.alert p {
+  margin-top: 5px;
+  font-size: 12px;
+  color: #697386;
+}
+
+.system-card h2 {
+  margin-bottom: 20px;
+}
+
+.module {
+  display: flex;
+  justify-content: space-between;
+  padding: 14px 0;
+  border-bottom: 1px solid #edf0f4;
+  font-size: 13px;
+}
+
+.module:last-child {
+  border-bottom: none;
+}
+
+.module-status {
+  color: #198754;
+  font-size: 10px;
+  font-weight: bold;
+}
+
+.module-status.simulated {
+  color: #9a6700;
+}
+
+@media (max-width: 1100px) {
+
+  .overview {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .crowd-card {
+    grid-column: span 2;
+  }
+
+  .bottom-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 650px) {
+
+  .dashboard {
+    padding: 15px;
+  }
+
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 15px;
+  }
+
+  .overview {
+    grid-template-columns: 1fr;
+  }
+
+  .crowd-card {
+    grid-column: span 1;
+  }
+
+  .card-header {
+    flex-direction: column;
+  }
+}

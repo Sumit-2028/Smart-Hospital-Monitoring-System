@@ -1,0 +1,124 @@
+# ==========================================
+# Smart Hospital Monitoring System
+# ==========================================
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Python virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Environment variables / secrets
+.env
+.env.*
+!.env.example
+
+# ---------- FastAPI / Backend ----------
+backend/.pytest_cache/
+backend/.mypy_cache/
+backend/.ruff_cache/
+backend/htmlcov/
+backend/.coverage
+backend/coverage.xml
+
+# ---------- Computer Vision ----------
+computer-vision/.pytest_cache/
+computer-vision/.mypy_cache/
+computer-vision/.ruff_cache/
+
+# YOLO / ML generated files
+runs/
+weights/
+checkpoints/
+
+# YOLO model files
+*.pt
+*.pth
+*.onnx
+
+# ---------- Frontend ----------
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+
+# Environment files
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# Vite cache
+frontend/.vite/
+
+# ---------- Logs ----------
+*.log
+logs/
+
+# ---------- Databases ----------
+*.db
+*.sqlite
+*.sqlite3
+
+# PostgreSQL local dump files
+*.sql
+*.dump
+*.backup
+
+# ---------- IDE ----------
+.vscode/
+.idea/
+
+# IntelliJ
+*.iml
+*.iws
+*.ipr
+
+# ---------- OS ----------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------- Temporary files ----------
+*.tmp
+*.temp
+*.swp
+*.swo
+*.bak
+*.orig
+
+# ---------- Python tooling ----------
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ---------- Jupyter ----------
+.ipynb_checkpoints/
+
+# ---------- Build / generated files ----------
+dist/
+build/
+*.egg-info/
+
+# ---------- Camera / generated media ----------
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.webm
+
+# Generated images
+output/
+outputs/
+
+# ---------- Secrets / certificates ----------
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
