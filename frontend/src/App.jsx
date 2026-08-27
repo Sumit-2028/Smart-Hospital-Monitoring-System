@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
+import { Routes, Route, Link } from "react-router-dom";
 
-function App() {
+import CrowdHistory from "./pages/CrowdHistory";
+
+function Dashboard() {
   const [personCount, setPersonCount] = useState(0);
   const [threshold, setThreshold] = useState(20);
   const [status, setStatus] = useState("NORMAL");
@@ -12,6 +15,7 @@ function App() {
 
     socket.onopen = () => {
       console.log("WebSocket connected");
+
       setConnected(true);
     };
 
@@ -21,7 +25,9 @@ function App() {
       console.log("Live crowd data:", data);
 
       setPersonCount(data.person_count);
+
       setThreshold(data.threshold);
+
       setStatus(data.status);
 
       setLastUpdate(new Date().toLocaleTimeString());
@@ -29,11 +35,13 @@ function App() {
 
     socket.onclose = () => {
       console.log("WebSocket disconnected");
+
       setConnected(false);
     };
 
     socket.onerror = (error) => {
       console.error("WebSocket error:", error);
+
       setConnected(false);
     };
 
@@ -49,17 +57,29 @@ function App() {
       <header className="header">
         <div>
           <h1>Smart Hospital Monitoring</h1>
+
           <p>Real-Time Hospital Safety Dashboard</p>
         </div>
 
         <div className={connected ? "connection online" : "connection offline"}>
           <span></span>
+
           {connected ? "SYSTEM ONLINE" : "SYSTEM OFFLINE"}
         </div>
       </header>
 
       <main>
+        {/* Analytics Navigation */}
+
+        <div className="analytics-navigation">
+          <Link to="/analytics" className="analytics-button">
+            Crowd Analytics →
+          </Link>
+        </div>
+
         <section className="overview">
+          {/* LIVE CROWD */}
+
           <div className="card crowd-card">
             <div className="card-header">
               <div>
@@ -105,6 +125,8 @@ function App() {
             <div className="last-update">Last update: {lastUpdate}</div>
           </div>
 
+          {/* AIR QUALITY */}
+
           <div className="card">
             <p className="label">AIR QUALITY</p>
 
@@ -117,6 +139,8 @@ function App() {
             </p>
           </div>
 
+          {/* ACCESS CONTROL */}
+
           <div className="card">
             <p className="label">ACCESS CONTROL</p>
 
@@ -126,6 +150,8 @@ function App() {
 
             <p className="coming-soon">RFID reader will be connected later.</p>
           </div>
+
+          {/* DUSTBIN */}
 
           <div className="card">
             <p className="label">DUSTBIN LEVEL</p>
@@ -141,6 +167,8 @@ function App() {
         </section>
 
         <section className="bottom-grid">
+          {/* ALERTS */}
+
           <div className="card alerts-card">
             <div className="section-title">
               <div>
@@ -176,6 +204,8 @@ function App() {
               </div>
             )}
           </div>
+
+          {/* SYSTEM STATUS */}
 
           <div className="card system-card">
             <p className="label">SYSTEM STATUS</p>
@@ -213,6 +243,16 @@ function App() {
         </section>
       </main>
     </div>
+  );
+}
+
+function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<Dashboard />} />
+
+      <Route path="/analytics" element={<CrowdHistory />} />
+    </Routes>
   );
 }
 
