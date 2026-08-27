@@ -8,6 +8,12 @@ load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
+if not DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL is not configured. Copy backend/.env.example to "
+        "backend/.env and set the PostgreSQL connection string."
+    )
+
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True

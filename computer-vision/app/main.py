@@ -31,12 +31,16 @@ def send_crowd_data(person_count):
             print(
                 f"Backend error: {response.status_code}"
             )
+            return False
+
+        return True
 
     except requests.RequestException as error:
 
         print(
             f"Backend unavailable: {error}"
         )
+        return False
 
 
 def main():
@@ -48,7 +52,13 @@ def main():
         print("ERROR: Could not open webcam.")
         return
 
-    detector = PersonDetector()
+    try:
+        detector = PersonDetector()
+    except Exception as error:
+        print(f"Could not load the YOLO model: {error}")
+        camera.release()
+        cv2.destroyAllWindows()
+        return
     tracker = CrowdTracker()
 
     last_update_time = 0
@@ -78,10 +88,15 @@ def main():
                 int(height * 0.90)
             )
 
-        # YOLO tracking happens continuously
-        result = detector.track(frame)
+        # YOLO tracking happens continuously. A model/runtime error should
+        # stop the camera loop cleanly instead of leaving the camera open.
+        try:
+            result = detector.track(frame)
+        except Exception as error:
+            print(f"Computer vision tracking error: {error}")
+            break
 
-        current_ids = tracker.update(
+        tracker.update(
             result,
             roi
         )
@@ -114,7 +129,7 @@ def main():
             status = "NORMAL"
 
         # Send count to backend at configured interval
-        current_time = time.time()
+        current_time = time.monotonic()
 
         if (
             current_time - last_update_time

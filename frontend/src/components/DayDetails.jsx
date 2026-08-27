@@ -1,19 +1,28 @@
-function DayDetails({ selectedDate, hourlyData, summary }) {
+import { formatISTDate } from "../config";
+
+function DayDetails({ selectedDate, hourlyData }) {
   if (!hourlyData || hourlyData.length === 0) {
     return (
       <div className="chart-card">
         <p className="analytics-label">DAY DETAILS</p>
 
-        <h2>{selectedDate}</h2>
+        <h2>{formatISTDate(selectedDate)}</h2>
 
         <p className="empty-text">No crowd readings available for this date.</p>
       </div>
     );
   }
 
-  const totalAverage =
-    hourlyData.reduce((sum, item) => sum + item.average_crowd, 0) /
-    hourlyData.length;
+  const totalReadings = hourlyData.reduce(
+    (sum, item) => sum + (item.reading_count || 0),
+    0,
+  );
+  const totalAverage = totalReadings
+    ? hourlyData.reduce(
+        (sum, item) => sum + item.average_crowd * (item.reading_count || 0),
+        0,
+      ) / totalReadings
+    : 0;
 
   const peakItem = hourlyData.reduce((max, item) =>
     item.peak_crowd > max.peak_crowd ? item : max,
@@ -24,7 +33,7 @@ function DayDetails({ selectedDate, hourlyData, summary }) {
       <div>
         <p className="analytics-label">SELECTED DATE</p>
 
-        <h2>{selectedDate}</h2>
+        <h2>{formatISTDate(selectedDate)}</h2>
       </div>
 
       <div className="day-stat">

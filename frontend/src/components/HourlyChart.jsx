@@ -12,7 +12,7 @@ import {
 function HourlyChart({ data, selectedDate, setSelectedDate }) {
   const formattedData = data.map((item) => ({
     ...item,
-    hourLabel: `${String(item.hour).padStart(2, "0")}:00`,
+    hourLabel: formatHour(item.hour),
   }));
 
   return (
@@ -64,6 +64,13 @@ function HourlyChart({ data, selectedDate, setSelectedDate }) {
       )}
     </div>
   );
+}
+
+function formatHour(hour) {
+  const suffix = hour >= 12 ? "PM" : "AM";
+  const displayHour = hour % 12 || 12;
+
+  return `${displayHour}:00 ${suffix}`;
 }
 
 export default HourlyChart;

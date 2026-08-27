@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from sqlalchemy import (
     Boolean,
     Column,
@@ -9,6 +7,7 @@ from sqlalchemy import (
 )
 
 from app.database import Base
+from app.time_utils import utc_now_naive
 
 
 class CrowdReading(Base):
@@ -37,8 +36,8 @@ class CrowdReading(Base):
     )
 
     timestamp = Column(
-        DateTime,
-        default=datetime.utcnow,
+        DateTime(timezone=False),
+        default=utc_now_naive,
         nullable=False,
         index=True
     )
@@ -55,12 +54,13 @@ class CongestionEvent(Base):
     )
 
     started_at = Column(
-        DateTime,
-        nullable=False
+        DateTime(timezone=False),
+        nullable=False,
+        index=True,
     )
 
     ended_at = Column(
-        DateTime,
+        DateTime(timezone=False),
         nullable=True
     )
 
@@ -77,5 +77,6 @@ class CongestionEvent(Base):
     resolved = Column(
         Boolean,
         default=False,
-        nullable=False
+        nullable=False,
+        index=True
     )

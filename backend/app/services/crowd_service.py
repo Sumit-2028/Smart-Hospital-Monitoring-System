@@ -1,36 +1,78 @@
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
-from sqlalchemy import func
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models.crowd import (
     CrowdReading,
     CongestionEvent
 )
+from app.time_utils import (
+    IST,
+    as_utc_naive,
+    ist_day_bounds_utc_naive,
+    serialize_utc,
+    utc_now_naive,
+    utc_to_ist,
+)
 
 
-def get_today_start():
-
-    now = datetime.utcnow()
-
-    return datetime(
-        now.year,
-        now.month,
-        now.day
+def get_latest_reading(db: Session):
+    reading = (
+        db.query(CrowdReading)
+        .order_by(CrowdReading.timestamp.desc())
+        .first()
     )
 
+    if reading is None:
+        return None
 
-def get_today_summary(db: Session):
+    return {
+        "id": reading.id,
+        "person_count": reading.person_count,
+        "threshold": reading.threshold,
+        "status": reading.status,
+        "timestamp": serialize_utc(reading.timestamp),
+    }
+
+
+# ==================================================
+# TODAY START
+# ==================================================
+
+def get_today_start():
+    """
+    Return today's midnight in UTC-naive format,
+    based on the current Indian date.
+    """
+
+    return ist_day_bounds_utc_naive(datetime.now(IST).date())[0]
+
+
+# ==================================================
+# TODAY SUMMARY
+# ==================================================
+
+def get_today_summary(
+    db: Session
+):
 
     start = get_today_start()
+    now = utc_now_naive()
 
     readings = (
         db.query(CrowdReading)
         .filter(
-            CrowdReading.timestamp >= start
+            CrowdReading.timestamp >= start,
+            CrowdReading.timestamp <= now
         )
+        .order_by(CrowdReading.timestamp)
         .all()
     )
+
+    # ----------------------------------------
+    # No readings
+    # ----------------------------------------
 
     if not readings:
 
@@ -41,18 +83,38 @@ def get_today_summary(db: Session):
             "minimum_crowd": 0,
             "congestion_events": 0,
             "congestion_minutes": 0,
-            "busiest_hour": None
+            "busiest_hour": None,
+            "threshold": None,
+            "current_count": 0,
+            "current_status": "NORMAL",
+            "last_update": None
         }
 
-    average_crowd = sum(
-        reading.person_count
-        for reading in readings
-    ) / len(readings)
+    # ----------------------------------------
+    # Average crowd
+    # ----------------------------------------
+
+    average_crowd = (
+        sum(
+            reading.person_count
+            for reading in readings
+        )
+        / len(readings)
+    )
+
+    # ----------------------------------------
+    # Peak crowd
+    # ----------------------------------------
 
     peak_reading = max(
         readings,
-        key=lambda reading: reading.person_count
+        key=lambda reading:
+            reading.person_count
     )
+
+    # ----------------------------------------
+    # Minimum crowd
+    # ----------------------------------------
 
     minimum_crowd = min(
         reading.person_count
@@ -60,16 +122,21 @@ def get_today_summary(db: Session):
     )
 
     # ----------------------------------------
-    # Calculate busiest hour
+    # Busiest hour - IST
     # ----------------------------------------
 
     hourly_totals = {}
 
     for reading in readings:
 
-        hour = reading.timestamp.hour
+        ist_time = utc_to_ist(
+            reading.timestamp
+        )
+
+        hour = ist_time.hour
 
         if hour not in hourly_totals:
+
             hourly_totals[hour] = []
 
         hourly_totals[hour].append(
@@ -77,7 +144,10 @@ def get_today_summary(db: Session):
         )
 
     hourly_averages = {
-        hour: sum(values) / len(values)
+
+        hour:
+            sum(values) / len(values)
+
         for hour, values
         in hourly_totals.items()
     }
@@ -98,7 +168,11 @@ def get_today_summary(db: Session):
     events = (
         db.query(CongestionEvent)
         .filter(
-            CongestionEvent.started_at >= start
+            CongestionEvent.started_at <= now,
+            or_(
+                CongestionEvent.ended_at.is_(None),
+                CongestionEvent.ended_at >= start,
+            )
         )
         .all()
     )
@@ -106,29 +180,39 @@ def get_today_summary(db: Session):
     congestion_minutes = 0
 
     for event in events:
-
-        end = (
-            event.ended_at
-            if event.ended_at
-            else datetime.utcnow()
+        started_at = max(as_utc_naive(event.started_at), start)
+        ended_at = as_utc_naive(event.ended_at) if event.ended_at else now
+        ended_at = min(ended_at, now)
+        congestion_minutes += max(
+            0,
+            (ended_at - started_at).total_seconds() / 60,
         )
 
-        congestion_minutes += (
-            end - event.started_at
-        ).total_seconds() / 60
+    # ----------------------------------------
+    # Peak time → IST
+    # ----------------------------------------
+
+    peak_time_ist = utc_to_ist(
+        peak_reading.timestamp
+    )
+
+    # ----------------------------------------
+    # Return summary
+    # ----------------------------------------
 
     return {
 
-        "average_crowd": round(
-            average_crowd,
-            2
-        ),
+        "average_crowd":
+            round(
+                average_crowd,
+                2
+            ),
 
         "peak_crowd":
             peak_reading.person_count,
 
         "peak_time":
-            peak_reading.timestamp.isoformat(),
+            peak_time_ist.isoformat(),
 
         "minimum_crowd":
             minimum_crowd,
@@ -143,137 +227,211 @@ def get_today_summary(db: Session):
             ),
 
         "busiest_hour":
-            busiest_hour
+            busiest_hour,
 
+        "threshold":
+            readings[-1].threshold,
+
+        "current_count":
+            readings[-1].person_count,
+
+        "current_status":
+            readings[-1].status,
+
+        "last_update":
+            utc_to_ist(readings[-1].timestamp).isoformat()
     }
 
+
+# ==================================================
+# DAILY HISTORY
+# ==================================================
 
 def get_daily_history(
     db: Session,
     days: int = 7
 ):
 
-    start = (
-        datetime.utcnow()
-        - timedelta(days=days - 1)
-    )
+    # ----------------------------------------
+    # Current Indian date
+    # ----------------------------------------
 
-    start = datetime(
-        start.year,
-        start.month,
-        start.day
-    )
+    now_ist = datetime.now(IST)
 
-    rows = (
-        db.query(
-            func.date(
-                CrowdReading.timestamp
-            ).label("date"),
-
-            func.avg(
-                CrowdReading.person_count
-            ).label("average_crowd"),
-
-            func.max(
-                CrowdReading.person_count
-            ).label("peak_crowd"),
-
-            func.min(
-                CrowdReading.person_count
-            ).label("minimum_crowd"),
-
-            func.count(
-                CrowdReading.id
-            ).label("reading_count")
+    start_date_ist = (
+        now_ist.date()
+        - timedelta(
+            days=days - 1
         )
+    )
+
+    # ----------------------------------------
+    # Indian midnight
+    # ----------------------------------------
+
+    start_utc, _ = ist_day_bounds_utc_naive(start_date_ist)
+
+    # ----------------------------------------
+    # Get readings
+    # ----------------------------------------
+
+    readings = (
+        db.query(CrowdReading)
         .filter(
-            CrowdReading.timestamp >= start
-        )
-        .group_by(
-            func.date(
-                CrowdReading.timestamp
-            )
+            CrowdReading.timestamp >= start_utc,
+            CrowdReading.timestamp <= utc_now_naive()
         )
         .order_by(
-            func.date(
-                CrowdReading.timestamp
-            )
+            CrowdReading.timestamp
         )
         .all()
     )
 
-    return [
-        {
-            "date": str(row.date),
-            "average_crowd": round(
-                float(row.average_crowd),
-                2
-            ),
-            "peak_crowd": row.peak_crowd,
-            "minimum_crowd": row.minimum_crowd,
-            "reading_count": row.reading_count
-        }
-        for row in rows
-    ]
+    # ----------------------------------------
+    # Group by IST date
+    # ----------------------------------------
 
+    daily_data = {}
+
+    for reading in readings:
+
+        ist_time = utc_to_ist(
+            reading.timestamp
+        )
+
+        date_key = ist_time.date()
+
+        if date_key not in daily_data:
+
+            daily_data[date_key] = []
+
+        daily_data[date_key].append(
+            reading.person_count
+        )
+
+    # ----------------------------------------
+    # Build result
+    # ----------------------------------------
+
+    result = []
+
+    for date_key in sorted(
+        daily_data.keys()
+    ):
+
+        values = daily_data[date_key]
+
+        result.append({
+
+            "date":
+                str(date_key),
+
+            "average_crowd":
+                round(
+                    sum(values) / len(values),
+                    2
+                ),
+
+            "peak_crowd":
+                max(values),
+
+            "minimum_crowd":
+                min(values),
+
+            "reading_count":
+                len(values)
+        })
+
+    return result
+
+
+# ==================================================
+# HOURLY HISTORY
+# ==================================================
 
 def get_hourly_history(
     db: Session,
-    selected_date: str
+    selected_date: date | str
 ):
 
-    from datetime import datetime
+    # ----------------------------------------
+    # Parse requested date
+    # ----------------------------------------
 
-    target_date = datetime.strptime(
-        selected_date,
-        "%Y-%m-%d"
-    ).date()
+    if isinstance(selected_date, str):
+        target_date = datetime.strptime(selected_date, "%Y-%m-%d").date()
+    else:
+        target_date = selected_date
 
-    rows = (
-        db.query(
-            func.extract(
-                "hour",
-                CrowdReading.timestamp
-            ).label("hour"),
+    start_utc, end_utc = ist_day_bounds_utc_naive(target_date)
 
-            func.avg(
-                CrowdReading.person_count
-            ).label("average_crowd"),
+    # ----------------------------------------
+    # Get readings
+    # ----------------------------------------
 
-            func.max(
-                CrowdReading.person_count
-            ).label("peak_crowd")
-        )
+    readings = (
+        db.query(CrowdReading)
         .filter(
-            func.date(
-                CrowdReading.timestamp
-            ) == target_date
-        )
-        .group_by(
-            func.extract(
-                "hour",
-                CrowdReading.timestamp
-            )
+            CrowdReading.timestamp >= start_utc,
+            CrowdReading.timestamp < end_utc,
+            CrowdReading.timestamp <= utc_now_naive()
         )
         .order_by(
-            func.extract(
-                "hour",
-                CrowdReading.timestamp
-            )
+            CrowdReading.timestamp
         )
         .all()
     )
 
-    return [
-        {
-            "hour": int(row.hour),
+    # ----------------------------------------
+    # Group by IST hour
+    # ----------------------------------------
 
-            "average_crowd": round(
-                float(row.average_crowd),
-                2
-            ),
+    hourly_data = {}
 
-            "peak_crowd": row.peak_crowd
-        }
-        for row in rows
-    ]
+    for reading in readings:
+
+        ist_time = utc_to_ist(
+            reading.timestamp
+        )
+
+        hour = ist_time.hour
+
+        if hour not in hourly_data:
+
+            hourly_data[hour] = []
+
+        hourly_data[hour].append(
+            reading.person_count
+        )
+
+    # ----------------------------------------
+    # Build result
+    # ----------------------------------------
+
+    result = []
+
+    for hour in sorted(
+        hourly_data.keys()
+    ):
+
+        values = hourly_data[hour]
+
+        result.append({
+
+            "hour":
+                hour,
+
+            "average_crowd":
+                round(
+                    sum(values) / len(values),
+                    2
+                ),
+
+            "peak_crowd":
+                max(values),
+
+            "reading_count":
+                len(values)
+        })
+
+    return result

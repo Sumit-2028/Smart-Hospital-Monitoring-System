@@ -1,3 +1,5 @@
+import { formatISTTime } from "../config";
+
 function formatHour(hour) {
   if (hour === null || hour === undefined) {
     return "--";
@@ -15,9 +17,10 @@ function formatPeakTime(timestamp) {
     return "--";
   }
 
-  return new Date(timestamp).toLocaleTimeString([], {
+  return formatISTTime(timestamp, {
     hour: "numeric",
     minute: "2-digit",
+    hour12: true,
   });
 }
 
@@ -65,7 +68,10 @@ function TodaySummary({ summary }) {
 
         <h3>{summary.congestion_minutes}</h3>
 
-        <span>minutes today</span>
+        <span>
+          {summary.congestion_events} event
+          {summary.congestion_events === 1 ? "" : "s"} · minutes today
+        </span>
       </div>
     </section>
   );

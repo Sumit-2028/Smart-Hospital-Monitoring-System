@@ -1,8 +1,7 @@
-from datetime import datetime
-
 from sqlalchemy import Boolean, Column, DateTime, Integer, String
 
 from app.database import Base
+from app.time_utils import utc_now_naive
 
 
 class Alert(Base):
@@ -19,7 +18,7 @@ class Alert(Base):
     resolved = Column(Boolean, default=False)
 
     created_at = Column(
-        DateTime,
-        default=datetime.utcnow,
+        DateTime(timezone=False),
+        default=utc_now_naive,
         nullable=False
     )

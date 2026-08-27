@@ -1,8 +1,7 @@
-from datetime import datetime
-
 from sqlalchemy import Column, DateTime, Integer, String
 
 from app.database import Base
+from app.time_utils import utc_now_naive
 
 
 class AccessLog(Base):
@@ -15,7 +14,7 @@ class AccessLog(Base):
     status = Column(String, nullable=False)
 
     timestamp = Column(
-        DateTime,
-        default=datetime.utcnow,
+        DateTime(timezone=False),
+        default=utc_now_naive,
         nullable=False
     )

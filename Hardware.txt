@@ -1,0 +1,603 @@
+SMART HOSPITAL MONITORING SYSTEM
+HARDWARE IMPLEMENTATION GUIDE
+================================
+
+Document purpose
+----------------
+
+This document describes the hardware that can be added to the current
+Smart Hospital Monitoring System. It is written for the repository as it
+currently exists.
+
+Important current status:
+
+- No physical hardware is connected at this stage.
+- Crowd monitoring is already implemented as a software-only webcam system.
+- The webcam, OpenCV, YOLO detection, tracking IDs, ROI entry/exit logic,
+  crowd count, congestion logic, FastAPI, PostgreSQL, WebSocket, and React
+  analytics dashboard are the active system.
+- ESP32, MQ-135, RFID, and ultrasonic modules are placeholders only.
+- This document does not claim that any sensor is connected or producing
+  real data.
+
+
+1. CURRENT SOFTWARE ARCHITECTURE
+================================
+
+The active crowd path is:
+
+    Computer webcam
+        -> OpenCV frame capture
+        -> YOLO person detection
+        -> ByteTrack tracking IDs
+        -> Waiting-area ROI filtering
+        -> Entry/exit detection with tracking grace frames
+        -> Crowd count
+        -> POST /api/crowd/
+        -> FastAPI status and congestion-event logic
+        -> PostgreSQL crowd_readings and congestion_events
+        -> WebSocket /ws
+        -> React live dashboard and analytics pages
+
+The computer-vision process currently sends JSON like this:
+
+    {
+      "person_count": 3,
+      "threshold": 5
+    }
+
+The backend calculates NORMAL or CONGESTED from person_count and threshold.
+The hardware must not replace this camera/YOLO path. A physical sensor cannot
+provide the same tracking-ID, ROI, entry/exit, or historical crowd behavior.
+Hardware should complement the camera system with environmental, access, and
+facility telemetry.
+
+
+2. HARDWARE PLACEHOLDERS FOUND IN THIS REPOSITORY
+=================================================
+
+Frontend placeholders currently represent:
+
+    AIR QUALITY       MQ-135       placeholder / simulation
+    ACCESS CONTROL    RFID         placeholder / not connected
+    DUSTBIN LEVEL     Ultrasonic   placeholder / simulation
+    CONTROLLER        ESP32        not connected
+
+The backend already contains these future-oriented SQLAlchemy models:
+
+    SensorReading:
+        sensor_type, value, status, timestamp
+
+    AccessLog:
+        rfid_uid, status, timestamp
+
+    Alert:
+        alert_type, message, severity, resolved, created_at
+
+However, the current backend has crowd routes only. There is currently no
+hardware telemetry route, sensor schema, RFID route, or frontend API flow for
+these models. Hardware cannot be integrated by simply wiring the components;
+the backend and frontend additions described later are also required.
+
+
+3. RECOMMENDED BILL OF MATERIALS
+=================================
+
+Quantity  Component                         Recommendation / purpose
+--------  --------------------------------  ----------------------------------
+1         ESP32 DevKit V1                   ESP32-WROOM-32 Wi-Fi controller
+1         MQ-135 module                     Indicative air-quality demo sensor
+1         RC522 / MFRC522                   13.56 MHz RFID reader
+1         HC-SR04P ultrasonic module        Dustbin distance/level measurement
+1         5 V, 2 A USB power supply          Stable power for the controller
+1         USB cable                         ESP32 programming and power
+1         Breadboard or terminal board      Temporary prototyping
+1         Jumper-wire set                   Male-male and male-female wires
+1         Resistor kit                      10 kOhm and 20 kOhm voltage-divider
+1         100 uF electrolytic capacitor     Supply smoothing near ESP32
+1         0.1 uF ceramic capacitors         Local noise decoupling
+
+Optional for a more reliable installation:
+
+- A 5 V regulated supply for the MQ-135 heater.
+- A 3.3 V regulator or a properly rated level-shifter board.
+- A waterproof JSN-SR04T instead of HC-SR04P if the dustbin environment is
+  wet or exposed to cleaning liquids.
+- A ventilated enclosure with strain relief and terminal blocks.
+- A fuse or protected power distribution board.
+- A second ESP32 if access control and facility sensing are physically far
+  apart. Begin with one ESP32 for the first prototype.
+
+
+4. COMPONENT DECISIONS AND LIMITATIONS
+=======================================
+
+4.1 ESP32 DevKit V1 / ESP32-WROOM-32
+------------------------------------
+
+Appropriate: YES
+
+Why it fits this project:
+
+- Built-in 2.4 GHz Wi-Fi matches the existing FastAPI-over-network design.
+- It has 3.3 V GPIO and ADC pins for RC522 and analog sensor input.
+- It is inexpensive, widely supported by Arduino IDE and PlatformIO, and
+  suitable for a single ward prototype.
+- It can send JSON to FastAPI without changing the computer-vision process.
+
+Limitations:
+
+- It is not a medical-grade controller.
+- It has limited ADC accuracy and noisy analog readings.
+- It must not be powered through random GPIO pins.
+- Its Wi-Fi connection needs recovery logic when the network disappears.
+- Secrets such as an API key must not be hard-coded in public firmware.
+
+4.2 MQ-135 air-quality module
+-----------------------------
+
+Appropriate: ONLY FOR AN INDICATIVE DEMONSTRATION
+
+The MQ-135 is acceptable for the current educational dashboard placeholder,
+but it is not a calibrated hospital air-quality instrument. It responds to
+multiple gases and is affected by humidity, temperature, sensor age, and
+warm-up time. Do not display its raw value as a clinical ppm measurement.
+
+Recommended use in this project:
+
+- Read its analog output.
+- Store a clearly named raw or normalized value.
+- Display a broad status such as NORMAL / CHECK / HIGH only after calibration.
+- Mark the dashboard value as experimental until a baseline and calibration
+  procedure have been completed.
+
+4.3 RC522 / MFRC522 RFID reader
+-------------------------------
+
+Appropriate: YES FOR DEMONSTRATION ACCESS LOGGING
+
+The RC522 is a 3.3 V SPI reader and is a better fit than a 5 V RFID module for
+the ESP32. It can identify cards/tags and create access-log events.
+
+Limitations:
+
+- A card UID is an identifier, not strong authentication.
+- Do not use UID-only access control for a real hospital security boundary.
+- The backend must maintain a server-side allowlist and log denied attempts.
+- Do not expose raw UIDs unnecessarily in the public frontend.
+
+4.4 HC-SR04P ultrasonic sensor
+-------------------------------
+
+Appropriate: YES FOR A DUSTBIN-LEVEL PROTOTYPE
+
+Mount the sensor at the top of the bin and measure the distance to the waste
+surface. Convert distance to a percentage only after measuring the empty and
+full-bin distances.
+
+The standard HC-SR04 family can expose a 5 V ECHO signal. That signal must not
+be connected directly to an ESP32 GPIO. Use a resistor divider or a suitable
+level shifter. If the bin can be wet, use a sealed waterproof ultrasonic model
+instead.
+
+
+5. ESP32 PIN PLAN
+=================
+
+The following pin assignment avoids the ESP32 ADC2/Wi-Fi conflict and keeps
+the RC522 on the usual VSPI pins.
+
+Function                 ESP32 pin       Direction / notes
+-----------------------  ---------------  -------------------------------
+RC522 SCK                GPIO18          VSPI clock
+RC522 MISO               GPIO19          VSPI input
+RC522 MOSI               GPIO23          VSPI output
+RC522 SDA/SS             GPIO5           Chip select
+RC522 RST                GPIO22          Reset output
+RC522 IRQ                Not connected   Not required for polling
+MQ-135 analog AO         GPIO34          ADC1 input-only pin
+MQ-135 digital DO        Not connected   Prefer calibrated analog reading
+Ultrasonic TRIG          GPIO26          ESP32 output
+Ultrasonic ECHO          GPIO27          ESP32 input through level divider
+Optional status LED      GPIO2           Use onboard LED if available
+
+Power pins:
+
+    ESP32 VIN/5V       -> regulated 5 V USB supply
+    ESP32 3V3          -> RC522 3.3 V supply
+    ESP32 GND          -> common ground
+    MQ-135 VCC         -> module-rated supply, normally 5 V
+    RC522 3.3V         -> ESP32 3V3
+    RC522 GND          -> common ground
+    HC-SR04P VCC       -> module-rated supply
+    HC-SR04P GND       -> common ground
+
+Do not connect a 5 V sensor output directly to an ESP32 GPIO. GPIO34 is
+input-only, so it is suitable for MQ-135 analog input but cannot drive the
+sensor. Do not use ESP32 GPIO6-GPIO11 because they are normally connected to
+flash memory. Avoid boot-strapping pins such as GPIO0, GPIO12, and GPIO15 for
+sensor outputs unless the boot behavior has been checked carefully.
+
+
+6. WIRING DETAILS
+=================
+
+6.1 RC522 to ESP32
+------------------
+
+    RC522 pin       ESP32
+    ---------       -----
+    3.3V            3V3
+    GND             GND
+    SDA / SS        GPIO5
+    SCK             GPIO18
+    MOSI            GPIO23
+    MISO            GPIO19
+    RST             GPIO22
+    IRQ             leave disconnected
+
+Use SPI mode and a short cable. The RC522 should be powered at 3.3 V. Do not
+feed the RC522 VCC from 5 V.
+
+6.2 MQ-135 to ESP32
+-------------------
+
+    MQ-135 VCC      module-rated 5 V supply
+    MQ-135 GND      common GND
+    MQ-135 AO       voltage divider -> GPIO34
+
+Example divider when AO can reach 5 V:
+
+    MQ AO ---- 10 kOhm ----+---- GPIO34
+                           |
+                         20 kOhm
+                           |
+                          GND
+
+This produces approximately 3.33 V from a 5 V input. Confirm the actual
+module output with a multimeter before connecting it. Never assume that a
+module labeled "5 V" has a safe 3.3 V analog output.
+
+The MQ-135 heater can draw meaningful current and creates heat. Keep its
+power path separate from a weak ESP32 3.3 V rail, while maintaining a common
+ground. Place it where airflow is representative and away from direct water,
+disinfectant spray, and the ESP32 heat source.
+
+6.3 Ultrasonic sensor to ESP32
+------------------------------
+
+    Ultrasonic VCC      module-rated supply
+    Ultrasonic GND      common GND
+    Ultrasonic TRIG     GPIO26
+    Ultrasonic ECHO     resistor divider / level shifter -> GPIO27
+
+Example ECHO divider for a 5 V ECHO signal:
+
+    ECHO ---- 10 kOhm ----+---- GPIO27
+                          |
+                        20 kOhm
+                          |
+                         GND
+
+Mount the transducer perpendicular to the waste surface. Record the empty
+and full distances. Keep the reading interval slow enough to avoid echoes
+from moving objects and the bin walls.
+
+
+7. POWER AND ELECTRICAL SAFETY
+==============================
+
+- Use a regulated 5 V supply rated for at least 2 A for the prototype.
+- Do not power the MQ-135 heater from an ESP32 GPIO.
+- Do not place 5 V on an ESP32 GPIO, RC522 pin, or ESP32 ADC input.
+- Use a common ground between all modules and the ESP32.
+- Turn power off before changing breadboard wiring.
+- Check polarity before powering the circuit.
+- Use a fuse/current-limited supply for a permanent installation.
+- Keep electronics away from liquids, cleaning chemicals, patient contact,
+  and mains-voltage wiring.
+- Use an enclosure and strain relief before placing hardware in a hospital
+  environment.
+- Hardware must be isolated from any life-support or clinical equipment.
+- This prototype is not a certified medical device.
+
+
+8. COMMUNICATION ARCHITECTURE
+=============================
+
+Recommended first integration: ESP32 Wi-Fi plus a separate FastAPI REST
+endpoint for hardware telemetry.
+
+Do NOT send hardware values to the existing crowd endpoint:
+
+    POST /api/crowd/
+
+That endpoint represents a computer-vision crowd reading and updates the
+crowd/congestion event state. Sending an MQ-135 or ultrasonic value there
+would corrupt crowd analytics.
+
+Add a future endpoint such as:
+
+    POST /api/hardware/telemetry
+
+Suggested payload:
+
+    {
+      "device_id": "esp32-ward-a-01",
+      "timestamp": "2026-08-27T10:15:30Z",
+      "air_quality": {
+        "raw_value": 1840,
+        "status": "EXPERIMENTAL"
+      },
+      "rfid_event": {
+        "uid": "server-side-identifier-or-redacted-value",
+        "status": "ALLOWED"
+      },
+      "dustbin_level": {
+        "percent": 63.5,
+        "status": "NORMAL"
+      }
+    }
+
+Recommended reporting behavior:
+
+- Send MQ-135 and dustbin readings every 5 to 10 seconds.
+- Send RFID events immediately when a tag is detected.
+- Include a device_id so additional ESP32 devices can be added later.
+- Generate timestamps in UTC or let the backend assign receipt time.
+- Validate every numeric range in FastAPI.
+- Retry with exponential backoff when the backend is unavailable.
+- Do not block sensor sampling forever while waiting for HTTP.
+- Keep the crowd POST interval controlled by the computer-vision process.
+
+REST is recommended first because it matches the current FastAPI architecture
+and requires no broker. MQTT can be considered later if many ESP32 devices
+or unreliable links make a broker useful. MQTT would require a broker,
+authentication, topic design, retained-message policy, and additional
+operational work that the current repository does not have.
+
+
+9. REQUIRED SOFTWARE INTEGRATION LATER
+======================================
+
+The current repository is not yet hardware-ready at the API level. When the
+components are purchased, implement the following in small steps:
+
+Backend:
+
+1. Add Pydantic schemas for validated sensor telemetry and RFID events.
+2. Add a hardware route, separate from /api/crowd/.
+3. Persist MQ-135 and ultrasonic readings through SensorReading.
+4. Persist RFID results through AccessLog.
+5. Add device_id, units, or calibration metadata if multiple devices require
+   them. Use a database migration for existing PostgreSQL installations.
+6. Add server-side RFID authorization rather than trusting the ESP32.
+7. Broadcast typed hardware messages, for example:
+
+       {"type": "sensor_update", "sensor_type": "air_quality", ...}
+
+   Keep the existing crowd WebSocket message fields unchanged for backwards
+   compatibility with the current React dashboard.
+8. Add authentication such as an ESP32 API key stored in environment variables
+   or a stronger device-authentication mechanism for a real deployment.
+9. Rate-limit and validate device submissions.
+10. Return generic errors without database credentials or stack traces.
+
+Frontend:
+
+1. Replace placeholder values only after hardware telemetry is received.
+2. Display the source, timestamp, unit, and data quality state.
+3. Show "NOT CONNECTED" when no recent device heartbeat exists.
+4. Show "CALIBRATION REQUIRED" for uncalibrated MQ-135 values.
+5. Do not show a real-looking sensor measurement when the API has no value.
+6. Keep hardware status separate from live crowd status.
+7. Display sensor timestamps in IST while retaining UTC in the API/database.
+
+ESP32 firmware:
+
+1. Connect to Wi-Fi without blocking forever.
+2. Read each sensor on its own schedule.
+3. Debounce RFID detection so one card does not create repeated events.
+4. Reject or flag impossible ultrasonic values.
+5. Apply local voltage and range checks before sending.
+6. Reconnect Wi-Fi and retry the backend safely.
+7. Include firmware version and device_id in telemetry.
+8. Avoid printing Wi-Fi passwords, API keys, or raw sensitive data.
+
+The existing computer-vision process should continue to own person detection,
+person tracking, ROI entry/exit, crowd count, threshold comparison, and
+congestion events. ESP32 readings must not change that ownership.
+
+
+10. DATABASE AND TIME RULES
+===========================
+
+The current crowd system uses PostgreSQL and stores its existing timestamp
+columns as UTC-naive values for compatibility with the current schema. The
+backend normalizes timestamps as UTC and uses the Asia/Kolkata timezone for
+Indian date/hour calculations and display serialization.
+
+Future hardware telemetry must follow the same policy:
+
+- Store instants consistently in UTC.
+- Include an explicit UTC offset or Z in API timestamps.
+- Convert to Asia/Kolkata only for dashboard display and IST-based reports.
+- Never manually add 5 hours 30 minutes to a timestamp.
+- Never mix timezone-aware and timezone-naive values in duration arithmetic.
+- Clamp or reject future and invalid timestamps as appropriate.
+- Use the device timestamp only if it has been validated; otherwise use
+  backend receipt time.
+
+The current backend analytics include:
+
+- Today average, peak, minimum, peak time, congestion event count, and
+  congestion minutes.
+- Daily history for 7, 30, or 90 days grouped by IST date.
+- Hourly history grouped by IST hour.
+- Congestion event start/end and peak crowd.
+
+Hardware analytics should not be mixed into crowd averages unless a separate
+metric and endpoint are defined.
+
+
+11. HARDWARE-TO-SOFTWARE ARCHITECTURE
+=====================================
+
+                         CURRENT ACTIVE PATH
+
+    USB webcam
+        |
+        v
+    OpenCV + YOLO + ByteTrack
+        |
+        v
+    ROI crowd count / entry / exit
+        |
+        v
+    FastAPI /api/crowd/ ---- PostgreSQL crowd tables
+        |
+        +---- WebSocket /ws ---- React live crowd dashboard
+
+
+                         FUTURE COMPLEMENTARY PATH
+
+    MQ-135       RC522 RFID       Ultrasonic dustbin sensor
+       \             |                         /
+        \            |                        /
+              ESP32-WROOM-32
+                      |
+                Wi-Fi REST telemetry
+                      |
+             FastAPI /api/hardware/telemetry
+                 |             |             |
+          SensorReading   AccessLog       Alert
+                 |
+                 +---- typed WebSocket updates ---- React modules
+
+The two paths meet at FastAPI but have separate meanings. The ESP32 path does
+not replace or overwrite the camera crowd path.
+
+
+12. SOFTWARE CONFIGURATION RELATIONSHIP
+=======================================
+
+The current computer-vision configuration uses:
+
+    CAMERA_INDEX       environment variable, fallback 0
+    CROWD_THRESHOLD    shared backend/.env value, fallback 5
+    UPDATE_INTERVAL    environment variable, fallback 0.5 seconds
+    BACKEND_URL        environment variable, fallback http://127.0.0.1:8000
+    TRACKING_GRACE_FRAMES = 15
+
+The current frontend uses:
+
+    VITE_API_BASE_URL  fallback http://127.0.0.1:8000
+    VITE_WS_URL        fallback ws://127.0.0.1:8000/ws
+
+Hardware-specific configuration should be added as environment variables, not
+hard-coded into React or firmware source. Examples for a future device are:
+
+    ESP32_DEVICE_ID
+    ESP32_API_URL
+    ESP32_API_KEY
+    SENSOR_REPORT_INTERVAL
+    RFID_READER_ENABLED
+    MQ135_CALIBRATION_BASELINE
+    DUSTBIN_EMPTY_DISTANCE_MM
+    DUSTBIN_FULL_DISTANCE_MM
+
+Do not commit .env files, API keys, Wi-Fi passwords, or private credentials.
+
+
+13. COMMISSIONING AND CALIBRATION PROCEDURE
+===========================================
+
+Before connecting to the hospital dashboard:
+
+1. Test the ESP32 alone over USB and confirm stable booting.
+2. Test RC522 at 3.3 V and confirm one UID read per card presentation.
+3. Test ultrasonic wiring with a multimeter and a known target distance.
+4. Confirm the ECHO divider output never exceeds 3.3 V.
+5. Power the MQ-135 safely and allow its heater to stabilize.
+6. Record MQ-135 readings in clean reference air.
+7. Repeat measurements under controlled test conditions.
+8. Record the empty and full dustbin distances.
+9. Confirm common ground and supply voltage under load.
+10. Add the backend telemetry route before enabling frontend live values.
+11. Test backend-unavailable behavior and Wi-Fi reconnection.
+12. Test that a hardware message cannot create a crowd reading or congestion
+    event.
+13. Test timestamps around 00:00 IST and verify the displayed date/hour.
+14. Only then mount the components in an enclosure.
+
+MQ-135 calibration warning:
+
+- Sensor resistance varies significantly between units.
+- A generic module reading is not automatically ppm.
+- Humidity and temperature compensation are required for meaningful results.
+- Do not use this sensor to make clinical or safety-critical decisions.
+
+
+14. END-TO-END TEST CHECKLIST
+=============================
+
+Electrical:
+
+[ ] ESP32 receives stable regulated power.
+[ ] All module grounds are common.
+[ ] RC522 is powered at 3.3 V.
+[ ] MQ-135 AO is level-shifted before GPIO34.
+[ ] Ultrasonic ECHO is level-shifted before GPIO27.
+[ ] No boot or flash pins are incorrectly loaded.
+
+Firmware:
+
+[ ] Device connects and reconnects to Wi-Fi.
+[ ] Device sends a device_id and valid timestamp.
+[ ] Sensor intervals do not block one another.
+[ ] RFID events are debounced.
+[ ] Invalid readings are flagged or discarded.
+[ ] API keys and Wi-Fi credentials are not printed.
+
+Backend:
+
+[ ] Hardware endpoint is separate from /api/crowd/.
+[ ] Numeric ranges and payload sizes are validated.
+[ ] SensorReading and AccessLog rows persist correctly.
+[ ] Hardware messages use typed WebSocket events.
+[ ] Database failures return safe 503 responses.
+[ ] Device authentication and rate limiting are enabled.
+
+Frontend:
+
+[ ] MQ-135 remains marked calibration-required until calibrated.
+[ ] Missing hardware data displays NOT CONNECTED, not fake data.
+[ ] RFID status is based on backend authorization.
+[ ] Dustbin percentage uses measured empty/full distances.
+[ ] Hardware timestamps display in IST.
+[ ] Crowd count and congestion continue to work when ESP32 is offline.
+
+Crowd regression:
+
+[ ] One tracked ID remains one person across frames.
+[ ] Temporary occlusion does not double-count a person.
+[ ] ROI entry increments the tracked crowd count.
+[ ] ROI exit removes the tracked person after the configured grace period.
+[ ] Threshold crossing creates one congestion event.
+[ ] A continuous congestion period never creates duplicate events.
+[ ] Hardware telemetry cannot affect crowd count.
+
+
+15. FINAL RECOMMENDATION
+========================
+
+Purchase one ESP32 DevKit V1, one RC522, one MQ-135 module, and one
+HC-SR04P/JSN-SR04T module for a controlled prototype. Keep the webcam and
+YOLO pipeline as the authoritative crowd-monitoring system. Integrate the
+ESP32 later through a new authenticated FastAPI hardware endpoint and typed
+WebSocket messages.
+
+The current software demonstration remains fully usable without any of these
+physical components. The hardware phase should be treated as an additive
+telemetry and access-control phase, not as a replacement for person tracking
+or crowd analytics.

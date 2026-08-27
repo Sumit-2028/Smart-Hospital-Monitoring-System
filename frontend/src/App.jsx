@@ -2,55 +2,146 @@ import { useEffect, useState } from "react";
 import { Routes, Route, Link } from "react-router-dom";
 
 import CrowdHistory from "./pages/CrowdHistory";
+import {
+  API_BASE_URL,
+  formatISTTime,
+  IST_TIME_ZONE,
+  WS_URL,
+} from "./config";
 
 function Dashboard() {
   const [personCount, setPersonCount] = useState(0);
-  const [threshold, setThreshold] = useState(20);
+  const [threshold, setThreshold] = useState(null);
   const [status, setStatus] = useState("NORMAL");
   const [connected, setConnected] = useState(false);
   const [lastUpdate, setLastUpdate] = useState("--");
+  const [connectionState, setConnectionState] = useState("CONNECTING");
+  const [error, setError] = useState("");
+
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  // ----------------------------------------
+  // Current time
+  // ----------------------------------------
 
   useEffect(() => {
-    const socket = new WebSocket("ws://127.0.0.1:8000/ws");
-
-    socket.onopen = () => {
-      console.log("WebSocket connected");
-
-      setConnected(true);
-    };
-
-    socket.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-
-      console.log("Live crowd data:", data);
-
-      setPersonCount(data.person_count);
-
-      setThreshold(data.threshold);
-
-      setStatus(data.status);
-
-      setLastUpdate(new Date().toLocaleTimeString());
-    };
-
-    socket.onclose = () => {
-      console.log("WebSocket disconnected");
-
-      setConnected(false);
-    };
-
-    socket.onerror = (error) => {
-      console.error("WebSocket error:", error);
-
-      setConnected(false);
-    };
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
 
     return () => {
-      socket.close();
+      clearInterval(timer);
     };
   }, []);
 
+  // ----------------------------------------
+  // Hydrate the dashboard from persisted state before the next live update.
+  useEffect(() => {
+    const controller = new AbortController();
+
+    fetch(`${API_BASE_URL}/api/crowd/latest`, { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("Unable to load the latest crowd reading");
+        }
+
+        return response.json();
+      })
+      .then((data) => {
+        if (!data) {
+          return;
+        }
+
+        setPersonCount(data.person_count);
+        setThreshold(data.threshold);
+        setStatus(data.status);
+        setLastUpdate(formatISTTime(data.timestamp));
+      })
+      .catch((fetchError) => {
+        if (fetchError.name !== "AbortError") {
+          setError("Live data is not available yet.");
+        }
+      });
+
+    return () => controller.abort();
+  }, []);
+
+  // WebSocket live updates with a small reconnect delay for temporary outages.
+  useEffect(() => {
+    let socket;
+    let reconnectTimer;
+    let disposed = false;
+
+    const connect = () => {
+      if (disposed) {
+        return;
+      }
+
+      setConnectionState("CONNECTING");
+      socket = new WebSocket(WS_URL);
+
+      socket.onopen = () => {
+        setConnected(true);
+        setConnectionState("CONNECTED");
+        setError("");
+      };
+
+      socket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          if (
+            typeof data.person_count !== "number" ||
+            typeof data.threshold !== "number"
+          ) {
+            return;
+          }
+
+          setPersonCount(data.person_count);
+          setThreshold(data.threshold);
+          setStatus(data.status === "CONGESTED" ? "CONGESTED" : "NORMAL");
+          setLastUpdate(formatISTTime(data.timestamp));
+        } catch {
+          setError("Received an invalid live crowd update.");
+        }
+      };
+
+      socket.onclose = () => {
+        setConnected(false);
+        setConnectionState("RECONNECTING");
+
+        if (!disposed) {
+          reconnectTimer = setTimeout(connect, 3000);
+        }
+      };
+
+      socket.onerror = () => {
+        setConnected(false);
+        setConnectionState("RECONNECTING");
+      };
+    };
+
+    connect();
+
+    return () => {
+      disposed = true;
+      clearTimeout(reconnectTimer);
+      socket?.close();
+    };
+  }, []);
+
+  const currentTimeText = currentTime.toLocaleTimeString("en-IN", {
+    timeZone: IST_TIME_ZONE,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  });
+
   const isCongested = status === "CONGESTED";
+  const occupancyPercent = threshold
+    ? Math.min((personCount / threshold) * 100, 100)
+    : 0;
 
   return (
     <div className="dashboard">
@@ -61,14 +152,31 @@ function Dashboard() {
           <p>Real-Time Hospital Safety Dashboard</p>
         </div>
 
-        <div className={connected ? "connection online" : "connection offline"}>
-          <span></span>
+        {/* RIGHT SIDE OF HEADER */}
 
-          {connected ? "SYSTEM ONLINE" : "SYSTEM OFFLINE"}
+        <div className="header-right">
+          {/* CURRENT TIME */}
+
+          <div className="current-time">
+            {currentTimeText}
+          </div>
+
+          {/* CONNECTION STATUS */}
+
+          <div
+            className={connected ? "connection online" : "connection offline"}
+          >
+            <span></span>
+
+            {connectionState === "CONNECTED"
+              ? "SYSTEM ONLINE"
+              : connectionState}
+          </div>
         </div>
       </header>
 
       <main>
+        {error && <div className="system-message">{error}</div>}
         {/* Analytics Navigation */}
 
         <div className="analytics-navigation">
@@ -97,7 +205,9 @@ function Dashboard() {
               </div>
             </div>
 
-            <div className="crowd-number">{personCount}</div>
+            <div className="crowd-number" aria-live="polite">
+              {personCount}
+            </div>
 
             <p className="people-text">PEOPLE DETECTED</p>
 
@@ -106,23 +216,30 @@ function Dashboard() {
                 <span>Occupancy</span>
 
                 <span>
-                  {personCount} / {threshold}
+                  {personCount} / {threshold ?? "--"}
                 </span>
               </div>
 
-              <div className="progress-bar">
+              <div
+                className="progress-bar"
+                role="progressbar"
+                aria-valuenow={personCount}
+                aria-valuemin="0"
+                aria-valuemax={threshold || 0}
+                aria-label="Waiting area occupancy"
+              >
                 <div
                   className={
                     isCongested ? "progress-fill danger-fill" : "progress-fill"
                   }
                   style={{
-                    width: `${Math.min((personCount / threshold) * 100, 100)}%`,
+                    width: `${occupancyPercent}%`,
                   }}
                 />
               </div>
             </div>
 
-            <div className="last-update">Last update: {lastUpdate}</div>
+            <div className="last-update">Last crowd update: {lastUpdate}</div>
           </div>
 
           {/* AIR QUALITY */}
@@ -144,11 +261,13 @@ function Dashboard() {
           <div className="card">
             <p className="label">ACCESS CONTROL</p>
 
-            <div className="metric-value">SECURE</div>
+            <div className="metric-value">--</div>
 
             <div className="metric-status">SIMULATION</div>
 
-            <p className="coming-soon">RFID reader will be connected later.</p>
+            <p className="coming-soon">
+              RFID reader is not connected yet.
+            </p>
           </div>
 
           {/* DUSTBIN */}
@@ -231,11 +350,29 @@ function Dashboard() {
             <div className="module">
               <span>PostgreSQL</span>
 
-              <span className="module-status">CONNECTED</span>
+              <span className="module-status">PERSISTENCE</span>
             </div>
 
             <div className="module">
               <span>ESP32</span>
+
+              <span className="module-status simulated">NOT CONNECTED</span>
+            </div>
+
+            <div className="module">
+              <span>MQ-135 air quality</span>
+
+              <span className="module-status simulated">SIMULATION</span>
+            </div>
+
+            <div className="module">
+              <span>RFID access reader</span>
+
+              <span className="module-status simulated">NOT CONNECTED</span>
+            </div>
+
+            <div className="module">
+              <span>Ultrasonic level sensor</span>
 
               <span className="module-status simulated">NOT CONNECTED</span>
             </div>

@@ -12,7 +12,7 @@ import CongestionEvents from "../components/CongestionEvents";
 
 import DayDetails from "../components/DayDetails";
 
-const API = "http://127.0.0.1:8000";
+import { API_BASE_URL, getISTDateValue } from "../config";
 
 function CrowdHistory() {
   const [summary, setSummary] = useState(null);
@@ -25,20 +25,25 @@ function CrowdHistory() {
 
   const [days, setDays] = useState(7);
 
-  const [selectedDate, setSelectedDate] = useState(
-    new Date().toISOString().split("T")[0],
-  );
+  const [selectedDate, setSelectedDate] = useState(getISTDateValue());
 
-  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(true);
 
-  const [loadingHourly, setLoadingHourly] = useState(false);
+  const [loadingHourly, setLoadingHourly] = useState(true);
+
+  const [summaryError, setSummaryError] = useState("");
+  const [historyError, setHistoryError] = useState("");
+  const [hourlyError, setHourlyError] = useState("");
+  const [eventsError, setEventsError] = useState("");
 
   // ----------------------------------------
   // Today's summary
   // ----------------------------------------
 
   useEffect(() => {
-    fetch(`${API}/api/crowd/today`)
+    const controller = new AbortController();
+
+    fetch(`${API_BASE_URL}/api/crowd/today`, { signal: controller.signal })
       .then((response) => {
         if (!response.ok) {
           throw new Error("Failed to load today's summary");
@@ -50,8 +55,12 @@ function CrowdHistory() {
         setSummary(data);
       })
       .catch((error) => {
-        console.error("Summary error:", error);
+        if (error.name !== "AbortError") {
+          setSummaryError("Today’s summary could not be loaded.");
+        }
       });
+
+    return () => controller.abort();
   }, []);
 
   // ----------------------------------------
@@ -59,9 +68,11 @@ function CrowdHistory() {
   // ----------------------------------------
 
   useEffect(() => {
-    setLoadingHistory(true);
+    const controller = new AbortController();
 
-    fetch(`${API}/api/crowd/history?days=${days}`)
+    fetch(`${API_BASE_URL}/api/crowd/history?days=${days}`, {
+      signal: controller.signal,
+    })
       .then((response) => {
         if (!response.ok) {
           throw new Error("Failed to load history");
@@ -73,13 +84,18 @@ function CrowdHistory() {
         setHistory(data);
       })
       .catch((error) => {
-        console.error("History error:", error);
-
-        setHistory([]);
+        if (error.name !== "AbortError") {
+          setHistoryError("Daily history could not be loaded.");
+          setHistory([]);
+        }
       })
       .finally(() => {
-        setLoadingHistory(false);
+        if (!controller.signal.aborted) {
+          setLoadingHistory(false);
+        }
       });
+
+    return () => controller.abort();
   }, [days]);
 
   // ----------------------------------------
@@ -87,9 +103,11 @@ function CrowdHistory() {
   // ----------------------------------------
 
   useEffect(() => {
-    setLoadingHourly(true);
+    const controller = new AbortController();
 
-    fetch(`${API}/api/crowd/history/${selectedDate}`)
+    fetch(`${API_BASE_URL}/api/crowd/history/${selectedDate}`, {
+      signal: controller.signal,
+    })
       .then((response) => {
         if (!response.ok) {
           throw new Error("Failed to load hourly data");
@@ -101,13 +119,18 @@ function CrowdHistory() {
         setHourly(data);
       })
       .catch((error) => {
-        console.error("Hourly error:", error);
-
-        setHourly([]);
+        if (error.name !== "AbortError") {
+          setHourlyError("Hourly history could not be loaded.");
+          setHourly([]);
+        }
       })
       .finally(() => {
-        setLoadingHourly(false);
+        if (!controller.signal.aborted) {
+          setLoadingHourly(false);
+        }
       });
+
+    return () => controller.abort();
   }, [selectedDate]);
 
   // ----------------------------------------
@@ -115,7 +138,9 @@ function CrowdHistory() {
   // ----------------------------------------
 
   useEffect(() => {
-    fetch(`${API}/api/crowd/events`)
+    const controller = new AbortController();
+
+    fetch(`${API_BASE_URL}/api/crowd/events`, { signal: controller.signal })
       .then((response) => {
         if (!response.ok) {
           throw new Error("Failed to load events");
@@ -127,11 +152,26 @@ function CrowdHistory() {
         setEvents(data);
       })
       .catch((error) => {
-        console.error("Events error:", error);
-
-        setEvents([]);
+        if (error.name !== "AbortError") {
+          setEventsError("Congestion events could not be loaded.");
+          setEvents([]);
+        }
       });
+
+    return () => controller.abort();
   }, []);
+
+  const handlePeriodChange = (value) => {
+    setLoadingHistory(true);
+    setHistoryError("");
+    setDays(value);
+  };
+
+  const handleDateChange = (value) => {
+    setLoadingHourly(true);
+    setHourlyError("");
+    setSelectedDate(value);
+  };
 
   return (
     <div className="analytics-page">
@@ -153,7 +193,11 @@ function CrowdHistory() {
 
       {/* TODAY SUMMARY */}
 
-      <TodaySummary summary={summary} />
+      {summaryError ? (
+        <div className="system-message">{summaryError}</div>
+      ) : (
+        <TodaySummary summary={summary} />
+      )}
 
       {/* DAILY HISTORY */}
 
@@ -168,21 +212,21 @@ function CrowdHistory() {
           <div className="period-selector">
             <button
               className={days === 7 ? "period-active" : ""}
-              onClick={() => setDays(7)}
+              onClick={() => handlePeriodChange(7)}
             >
               7 DAYS
             </button>
 
             <button
               className={days === 30 ? "period-active" : ""}
-              onClick={() => setDays(30)}
+              onClick={() => handlePeriodChange(30)}
             >
               30 DAYS
             </button>
 
             <button
               className={days === 90 ? "period-active" : ""}
-              onClick={() => setDays(90)}
+              onClick={() => handlePeriodChange(90)}
             >
               90 DAYS
             </button>
@@ -191,6 +235,8 @@ function CrowdHistory() {
 
         {loadingHistory ? (
           <div className="chart-card empty-chart">Loading crowd history...</div>
+        ) : historyError ? (
+          <div className="chart-card empty-chart">{historyError}</div>
         ) : (
           <CrowdChart data={history} />
         )}
@@ -202,7 +248,6 @@ function CrowdHistory() {
         <DayDetails
           selectedDate={selectedDate}
           hourlyData={hourly}
-          summary={summary}
         />
       </section>
 
@@ -213,11 +258,13 @@ function CrowdHistory() {
           <div className="chart-card empty-chart">
             Loading hourly analysis...
           </div>
+        ) : hourlyError ? (
+          <div className="chart-card empty-chart">{hourlyError}</div>
         ) : (
           <HourlyChart
             data={hourly}
             selectedDate={selectedDate}
-            setSelectedDate={setSelectedDate}
+            setSelectedDate={handleDateChange}
           />
         )}
       </section>
@@ -225,7 +272,11 @@ function CrowdHistory() {
       {/* CONGESTION */}
 
       <section>
-        <CongestionEvents events={events} />
+        {eventsError ? (
+          <div className="chart-card empty-chart">{eventsError}</div>
+        ) : (
+          <CongestionEvents events={events} />
+        )}
       </section>
     </div>
   );

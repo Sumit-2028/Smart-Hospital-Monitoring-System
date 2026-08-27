@@ -1,24 +1,33 @@
 from datetime import datetime
 
+from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from app.models.crowd import CongestionEvent
-
-
+from app.time_utils import as_utc_naive, utc_now_naive
 
 
 def update_congestion_event(
     db: Session,
     person_count: int,
-    threshold: int
+    threshold: int,
+    now: datetime | None = None,
+    commit: bool = True,
 ):
+    """
+    Start, update, or end a congestion event.
+    """
 
     is_congested = person_count >= threshold
 
+    # Find currently active congestion event
     active_event = (
         db.query(CongestionEvent)
         .filter(
-            CongestionEvent.resolved == False
+            and_(
+                CongestionEvent.resolved.is_(False),
+                CongestionEvent.ended_at.is_(None),
+            )
         )
         .order_by(
             CongestionEvent.started_at.desc()
@@ -26,41 +35,60 @@ def update_congestion_event(
         .first()
     )
 
-    # Start a new congestion event
+    # ----------------------------------------
+    # START NEW CONGESTION EVENT
+    # ----------------------------------------
+
     if is_congested and active_event is None:
 
+        event_time = as_utc_naive(now) if now else utc_now_naive()
+
         event = CongestionEvent(
-            started_at=datetime.utcnow(),
+            started_at=event_time,
             peak_crowd=person_count,
             threshold=threshold,
             resolved=False
         )
 
         db.add(event)
-        db.commit()
+        if commit:
+            db.commit()
 
         return "STARTED"
 
-    # Update existing event
+    # ----------------------------------------
+    # UPDATE EXISTING CONGESTION EVENT
+    # ----------------------------------------
+
     if is_congested and active_event:
 
         if person_count > active_event.peak_crowd:
 
             active_event.peak_crowd = person_count
 
-            db.commit()
+            if commit:
+                db.commit()
 
         return "ONGOING"
 
-    # End existing event
+    # ----------------------------------------
+    # END EXISTING CONGESTION EVENT
+    # ----------------------------------------
+
     if not is_congested and active_event:
 
-        active_event.ended_at = datetime.utcnow()
+        event_time = as_utc_naive(now) if now else utc_now_naive()
 
+        active_event.ended_at = event_time
         active_event.resolved = True
 
-        db.commit()
+        if commit:
+            db.commit()
 
         return "ENDED"
+
+    # ----------------------------------------
+    # NO EVENT
+    # ----------------------------------------
 
     return "NONE"

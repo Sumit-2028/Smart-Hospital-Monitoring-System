@@ -1,3 +1,5 @@
+import { formatISTDateTime } from "../config";
+
 function CongestionEvents({ events }) {
   if (!events || events.length === 0) {
     return (
@@ -27,7 +29,7 @@ function CongestionEvents({ events }) {
         {events.map((event) => (
           <div className="event-row" key={event.id}>
             <div>
-              <strong>{new Date(event.started_at).toLocaleTimeString()}</strong>
+              <strong>{formatISTDateTime(event.started_at)}</strong>
 
               <p>Peak: {event.peak_crowd} people</p>
             </div>
@@ -49,7 +51,7 @@ function CongestionEvents({ events }) {
 }
 
 function calculateDuration(start, end) {
-  const difference = new Date(end) - new Date(start);
+  const difference = Math.max(0, new Date(end) - new Date(start));
 
   return Math.round(difference / 60000);
 }

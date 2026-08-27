@@ -18,7 +18,7 @@ class ConnectionManager:
 
         disconnected = []
 
-        for connection in self.active_connections:
+        for connection in self.active_connections.copy():
 
             try:
                 await connection.send_json(data)

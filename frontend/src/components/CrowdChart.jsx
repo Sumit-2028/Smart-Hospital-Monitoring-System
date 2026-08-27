@@ -9,13 +9,10 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-function formatDate(date) {
-  const value = new Date(`${date}T00:00:00`);
+import { formatISTDate } from "../config";
 
-  return value.toLocaleDateString([], {
-    day: "numeric",
-    month: "short",
-  });
+function formatDate(date) {
+  return formatISTDate(date);
 }
 
 function CrowdChart({ data }) {
