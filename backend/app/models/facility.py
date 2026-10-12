@@ -31,7 +31,7 @@ class Room(Base):
 
     id = Column(Integer, primary_key=True)
     name = Column(String(120), nullable=False, index=True)
-    code = Column(String(80), unique=True, index=True)
+    code = Column(String(80), unique=True)
     room_type = Column(String(40), nullable=False, default="WAITING_AREA")
     department_id = Column(Integer, ForeignKey("departments.id", ondelete="SET NULL"), index=True)
     capacity = Column(Integer, nullable=False, default=1)
@@ -79,7 +79,8 @@ class AdminUser(Base):
     __tablename__ = "admin_users"
 
     id = Column(Integer, primary_key=True)
-    username = Column(String(120), nullable=False, unique=True, index=True)
+    username = Column(String(120), nullable=False, unique=True)
     password_hash = Column(String(300), nullable=False)
+    role = Column(String(20), nullable=False, default="ADMIN", index=True)
     active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, nullable=False, default=utc_now)

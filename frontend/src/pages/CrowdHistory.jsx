@@ -22,6 +22,13 @@ function CrowdHistory() {
   const [hourly, setHourly] = useState([]);
 
   const [events, setEvents] = useState([]);
+  const [eventRooms, setEventRooms] = useState([]);
+  const [eventStatus, setEventStatus] = useState("ALL");
+  const [eventRoomId, setEventRoomId] = useState("");
+  const [eventStartDate, setEventStartDate] = useState("");
+  const [eventEndDate, setEventEndDate] = useState("");
+  const [eventsLoading, setEventsLoading] = useState(true);
+  const [eventRetry, setEventRetry] = useState(0);
 
   const [days, setDays] = useState(7);
 
@@ -35,6 +42,16 @@ function CrowdHistory() {
   const [historyError, setHistoryError] = useState("");
   const [hourlyError, setHourlyError] = useState("");
   const [eventsError, setEventsError] = useState("");
+
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/api/monitoring/rooms`)
+      .then((response) => {
+        if (!response.ok) throw new Error("Failed to load rooms");
+        return response.json();
+      })
+      .then(setEventRooms)
+      .catch(() => setEventRooms([]));
+  }, []);
 
   // ----------------------------------------
   // Today's summary
@@ -139,8 +156,18 @@ function CrowdHistory() {
 
   useEffect(() => {
     const controller = new AbortController();
+    const params = new URLSearchParams({
+      status: eventStatus,
+      limit: "100",
+    });
+    if (eventRoomId) params.set("room_id", eventRoomId);
+    if (eventStartDate) params.set("start_date", eventStartDate);
+    if (eventEndDate) params.set("end_date", eventEndDate);
 
-    fetch(`${API_BASE_URL}/api/crowd/events`, { signal: controller.signal })
+    const requestTimer = window.setTimeout(() => {
+      setEventsLoading(true);
+      setEventsError("");
+      fetch(`${API_BASE_URL}/api/crowd/events/history?${params.toString()}`, { signal: controller.signal })
       .then((response) => {
         if (!response.ok) {
           throw new Error("Failed to load events");
@@ -149,17 +176,24 @@ function CrowdHistory() {
         return response.json();
       })
       .then((data) => {
-        setEvents(data);
+        setEvents(data.items || []);
       })
       .catch((error) => {
         if (error.name !== "AbortError") {
           setEventsError("Congestion events could not be loaded.");
           setEvents([]);
         }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setEventsLoading(false);
       });
+    }, 0);
 
-    return () => controller.abort();
-  }, []);
+    return () => {
+      window.clearTimeout(requestTimer);
+      controller.abort();
+    };
+  }, [eventEndDate, eventRetry, eventRoomId, eventStartDate, eventStatus]);
 
   const handlePeriodChange = (value) => {
     setLoadingHistory(true);
@@ -272,8 +306,23 @@ function CrowdHistory() {
       {/* CONGESTION */}
 
       <section>
-        {eventsError ? (
-          <div className="chart-card empty-chart">{eventsError}</div>
+        <div className="section-heading">
+          <div>
+            <p className="analytics-label">EVENT HISTORY</p>
+            <h2>Congestion Events</h2>
+          </div>
+          <button className="back-button" onClick={() => setEventRetry((value) => value + 1)}>Refresh</button>
+        </div>
+        <div className="event-filters card">
+          <label>Room<select value={eventRoomId} onChange={(event) => setEventRoomId(event.target.value)}><option value="">All rooms</option>{eventRooms.map((room) => <option value={room.room_id} key={room.room_id}>{room.room_name}</option>)}</select></label>
+          <label>Status<select value={eventStatus} onChange={(event) => setEventStatus(event.target.value)}><option>ALL</option><option>ACTIVE</option><option>RESOLVED</option></select></label>
+          <label>From<input type="date" value={eventStartDate} onChange={(event) => setEventStartDate(event.target.value)} /></label>
+          <label>To<input type="date" value={eventEndDate} onChange={(event) => setEventEndDate(event.target.value)} /></label>
+        </div>
+        {eventsLoading ? (
+          <div className="chart-card empty-chart">Loading congestion events...</div>
+        ) : eventsError ? (
+          <div className="chart-card empty-chart">{eventsError}<br /><button className="back-button" onClick={() => setEventRetry((value) => value + 1)}>Retry</button></div>
         ) : (
           <CongestionEvents events={events} />
         )}

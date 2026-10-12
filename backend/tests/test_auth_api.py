@@ -54,6 +54,16 @@ class AdminAuthApiTests(unittest.TestCase):
         response = self.client_context.get("/api/admin/rooms", headers={"Origin": "http://localhost:5173"})
         self.assertEqual(response.status_code, 401)
         self.assertEqual(response.headers["access-control-allow-origin"], "http://localhost:5173")
+        self.assertEqual(self.client_context.get("/api/reports/crowd-readings.csv").status_code, 401)
+
+    def test_authenticated_report_download_is_csv(self):
+        login = self.client_context.post("/api/admin/login", json={"username": "test-admin", "password": "correct-password"})
+        headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+        response = self.client_context.get("/api/reports/crowd-readings.csv?start_date=2099-01-01&end_date=2099-01-01", headers=headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/csv", response.headers["content-type"])
+        self.assertIn("reading_id,timestamp,room_id", response.text)
+        self.assertIn("attachment", response.headers["content-disposition"])
 
     def test_preflight_allows_frontend_origins_and_auth_headers(self):
         for origin in ("http://localhost:5173", "http://127.0.0.1:5173"):

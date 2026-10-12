@@ -30,32 +30,48 @@ function MultiRoomOverview() {
   }, []);
 
   useEffect(() => {
-    const socket = new WebSocket(WS_URL);
-    socket.onmessage = (event) => {
-      try {
-        const update = JSON.parse(event.data);
-        if (!update.room_id) return;
-        setRooms((current) => current.map((room) => {
-          if (room.room_id !== update.room_id) return room;
-          const camera = update.camera_id && room.camera?.id === update.camera_id
-            ? { ...room.camera, status: update.camera_status ?? room.camera.status, last_frame_at: update.last_frame_at ?? room.camera.last_frame_at }
-            : room.camera;
-          return {
-            ...room,
-            ...(update.event_type === "crowd.reading" ? {
-              current_count: update.person_count,
-              status: update.status,
-              last_update: update.timestamp,
-              capacity: update.capacity ?? room.capacity,
-            } : {}),
-            camera,
-          };
-        }));
-      } catch {
-        setError("Received an invalid room update.");
-      }
+    let socket;
+    let reconnectTimer;
+    let disposed = false;
+
+    const connect = () => {
+      if (disposed) return;
+      socket = new WebSocket(WS_URL);
+      socket.onmessage = (event) => {
+        try {
+          const update = JSON.parse(event.data);
+          if (!update.room_id) return;
+          setRooms((current) => current.map((room) => {
+            if (room.room_id !== update.room_id) return room;
+            const camera = update.camera_id && room.camera?.id === update.camera_id
+              ? { ...room.camera, status: update.camera_status ?? room.camera.status, last_frame_at: update.last_frame_at ?? room.camera.last_frame_at }
+              : room.camera;
+            return {
+              ...room,
+              ...(update.event_type === "crowd.reading" ? {
+                current_count: update.person_count,
+                status: update.status,
+                last_update: update.timestamp,
+                capacity: update.capacity ?? room.capacity,
+              } : {}),
+              camera,
+            };
+          }));
+        } catch {
+          setError("Received an invalid room update.");
+        }
+      };
+      socket.onclose = () => {
+        if (!disposed) reconnectTimer = window.setTimeout(connect, 3000);
+      };
     };
-    return () => socket.close();
+
+    connect();
+    return () => {
+      disposed = true;
+      window.clearTimeout(reconnectTimer);
+      socket?.close();
+    };
   }, []);
 
   if (error) return <div className="system-message">{error}</div>;

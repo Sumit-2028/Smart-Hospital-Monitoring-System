@@ -12,9 +12,10 @@ def main():
         raise SystemExit("Password must contain at least 8 characters")
     db = SessionLocal()
     try:
+        username = username.lower()
         if db.query(AdminUser).filter(AdminUser.username == username).first():
             raise SystemExit("Admin username already exists")
-        db.add(AdminUser(username=username, password_hash=hash_password(password)))
+        db.add(AdminUser(username=username, password_hash=hash_password(password), role="SUPERADMIN"))
         db.commit()
     finally:
         db.close()

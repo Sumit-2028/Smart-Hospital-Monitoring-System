@@ -31,6 +31,10 @@ Planned but not connected:
 See [Hardware.txt](Hardware.txt) for the complete wiring, power, component,
 and future integration guide.
 
+See [docs/e2e-integration.md](docs/e2e-integration.md) for isolated API tests,
+dedicated PostgreSQL smoke testing, real-camera verification, and browser-level
+manual checks.
+
 ## Architecture
 
 ```text
@@ -449,6 +453,41 @@ The migration is additive and does not delete existing tables or data. Its
 automatic downgrade is intentionally disabled; rollback requires a reviewed
 backup and a manually approved migration.
 
+The administrator security migration adds `admin_users.role` and the
+append-only `audit_logs` table. Existing administrator rows are assigned
+`SUPERADMIN` during this one-time compatibility migration so the installation
+does not lose its management account; review them in `/admin` and downgrade
+accounts to `ADMIN` where appropriate. `create_admin.py` creates a
+`SUPERADMIN` without printing or storing a default password. The password is
+entered interactively and is stored only as a PBKDF2 hash.
+
+`ADMIN` accounts can manage departments, rooms, cameras, doctors, cabins and
+reports. Only `SUPERADMIN` accounts can create, update, activate/deactivate
+administrators or view the audit log. A current administrator cannot
+deactivate itself, and the last active super administrator cannot be removed
+or downgraded. No endpoint can update or delete historical audit rows.
+
+Audit records include login outcomes, administrator changes, configuration
+changes, threshold changes, report-export requests and audit-log views. They
+contain actor/action/outcome/resource/timestamp data and non-sensitive filter
+metadata only; passwords, tokens, camera source credentials and report
+contents are never recorded.
+
+Audit-log API:
+
+```text
+GET /api/admin/me
+GET /api/admin/admins
+POST /api/admin/admins
+PUT /api/admin/admins/{admin_id}
+PATCH /api/admin/admins/{admin_id}/active?active=false
+GET /api/admin/audit-logs?start_date=2026-01-01&end_date=2026-01-31&actor_username=admin&action=ROOM_UPDATED&resource_type=ROOM&outcome=SUCCESS&offset=0&limit=25
+```
+
+All routes except login require a Bearer token. Administrator-management and
+audit-log routes additionally require the `SUPERADMIN` role. Date filters use
+inclusive IST calendar days, and audit results are paginated newest first.
+
 Open `/admin`, sign in with the account created by `create_admin.py`, and create
 departments first, then rooms, then cameras. A `WEBCAM` source is a device index
 such as `0`; an `IP_STREAM` source must use an `http`, `https`, or `rtsp` URL.
@@ -483,6 +522,52 @@ Room-aware live messages include `event_type`, `schema_version`, room/camera
 identifiers, capacity, warning percentage, status, and timestamps. The legacy
 `POST /api/crowd/` payload with `person_count` and `threshold` remains supported
 when `camera_id` is omitted.
+
+### Congestion alerts and event history
+
+For a registered camera, congestion events use the room's physical capacity as
+the congestion threshold. The room warning percentage controls the intermediate
+`WARNING` reading status and is not used to create a congestion event. Repeated
+congested readings update the same active event and raise its peak count;
+falling below the room capacity resolves it. A camera disconnect or stale feed
+does not resolve an event because no below-threshold crowd reading was received.
+
+Available event APIs are:
+
+```text
+GET /api/crowd/alerts/active?room_id=1
+GET /api/crowd/events/history?status=ALL&room_id=1&start_date=2026-01-01&end_date=2026-01-31&offset=0&limit=20
+GET /api/crowd/events/{event_id}
+```
+
+The existing `GET /api/crowd/events` route remains a compatibility list
+response and accepts room, status, date, and limit filters. History responses
+include room name, camera ID, start/end timestamps, current/peak crowd,
+threshold, status, and calculated duration. WebSocket lifecycle messages use
+`congestion.started`, `congestion.updated`, and `congestion.resolved`, each with
+`schema_version: 1` and an `event` object. The frontend reloads active alerts
+after WebSocket reconnects and de-duplicates lifecycle updates by event ID.
+
+### CSV reports and export
+
+Reports are available from the protected **Reports** tab in `/admin`. All three
+endpoints require an admin Bearer token and stream a CSV response so the server
+does not build a second copy of a large export in memory:
+
+```text
+GET /api/reports/crowd-readings.csv?start_date=2026-01-01&end_date=2026-01-31&room_id=1&camera_id=2
+GET /api/reports/congestion-events.csv?start_date=2026-01-01&end_date=2026-01-31&status=ALL
+GET /api/reports/daily-summary.csv?start_date=2026-01-01&end_date=2026-01-31&room_id=1
+```
+
+Dates are inclusive IST calendar dates. The crowd-reading export includes the
+stored count, server-calculated threshold and reading status. The event export
+includes active/resolved status and duration in seconds and minutes. The daily
+summary includes reading count, average/peak/minimum crowd, event count and
+total congestion duration. Empty exports still contain the stable header row.
+Text fields beginning with spreadsheet formula characters are prefixed with a
+single quote before CSV serialization. Report filters are validated by the
+backend, and stream credentials are not included in any report.
 
 Additional configuration variables:
 

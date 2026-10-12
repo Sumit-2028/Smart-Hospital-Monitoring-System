@@ -40,6 +40,9 @@ class FakeCapture:
     def release(self):
         self.released = True
 
+    def set(self, _property, _value):
+        return True
+
 
 class FakeDetector:
     def track(self, _frame):
@@ -130,6 +133,131 @@ class CameraManagerTests(unittest.TestCase):
             self.assertIsNot(manager.workers[1], first)
             manager.stop()
             self.assertTrue(manager.workers[1].stopped)
+
+    def test_processing_interval_records_skipped_frames_and_closes_session(self):
+        stop_event = threading.Event()
+        capture = FakeCapture(reads=[(True, self.frame)] * 4)
+
+        class StoppingDetector(FakeDetector):
+            calls = 0
+
+            def track(self, frame):
+                self.calls += 1
+                if self.calls == 2:
+                    stop_event.set()
+                return super().track(frame)
+
+        class FakeSession:
+            def __init__(self):
+                self.closed = False
+
+            def close(self):
+                self.closed = True
+
+        session = FakeSession()
+        config = {**camera_config(), "processing_interval": 2}
+        with patch.object(camera_manager.requests, "Session", return_value=session), \
+             patch.object(camera_manager.cv2, "VideoCapture", return_value=capture), \
+             patch.object(camera_manager, "PersonDetector", return_value=StoppingDetector()), \
+             patch.object(camera_manager.CameraWorker, "heartbeat"), \
+             patch.object(camera_manager.CameraWorker, "post_count"):
+            worker = camera_manager.CameraWorker(config, stop_event)
+            worker.run()
+
+        metrics = worker.metrics_snapshot()
+        self.assertEqual(metrics["frames_read"], 4)
+        self.assertEqual(metrics["frames_processed"], 2)
+        self.assertEqual(metrics["frames_skipped"], 2)
+        self.assertEqual(metrics["processing_interval"], 2)
+        self.assertTrue(session.closed)
+        self.assertTrue(capture.released)
+
+    def test_duplicate_worker_start_is_ignored(self):
+        class FakeWorker:
+            instances = []
+
+            def __init__(self, config, _stop_event):
+                self.config = config
+                self.alive = False
+                self.__class__.instances.append(self)
+
+            def start(self):
+                self.alive = True
+
+            def is_alive(self):
+                return self.alive
+
+            def stop(self):
+                self.alive = False
+
+            def join(self, timeout):
+                return None
+
+        config = camera_config()
+        with patch.object(camera_manager, "CameraWorker", FakeWorker):
+            manager = camera_manager.CameraProcessingManager([config])
+            self.assertFalse(manager._start_worker(config))
+            self.assertEqual(len(FakeWorker.instances), 1)
+
+    def test_one_worker_start_failure_does_not_block_other_cameras(self):
+        class PartiallyFailingWorker:
+            def __init__(self, config, _stop_event):
+                self.config = config
+                self.alive = False
+
+            def start(self):
+                if self.config["id"] == 1:
+                    raise RuntimeError("simulated start failure")
+                self.alive = True
+
+            def is_alive(self):
+                return self.alive
+
+            def stop(self):
+                self.alive = False
+
+            def join(self, timeout):
+                return None
+
+        with patch.object(camera_manager, "CameraWorker", PartiallyFailingWorker):
+            manager = camera_manager.CameraProcessingManager([camera_config(1), camera_config(2)])
+
+        self.assertNotIn(1, manager.workers)
+        self.assertIn(2, manager.workers)
+
+    def test_dead_camera_restart_keeps_other_worker_running(self):
+        class IndependentWorker:
+            instances = []
+
+            def __init__(self, config, _stop_event):
+                self.config = config
+                self.alive = False
+                self.stopped = False
+                self.__class__.instances.append(self)
+
+            def start(self):
+                self.alive = True
+
+            def is_alive(self):
+                return self.alive
+
+            def stop(self):
+                self.stopped = True
+                self.alive = False
+
+            def join(self, timeout):
+                return None
+
+        with patch.object(camera_manager, "CameraWorker", IndependentWorker), \
+             patch.object(camera_manager, "CAMERA_RESTART_DELAY", 0):
+            manager = camera_manager.CameraProcessingManager([camera_config(1), camera_config(2)])
+            other_worker = manager.workers[2]
+            manager.workers[1].alive = False
+            manager.sync_configs([camera_config(1), camera_config(2)])
+
+            self.assertIs(manager.workers[2], other_worker)
+            self.assertTrue(manager.workers[2].is_alive())
+            manager.stop()
 
 
 if __name__ == "__main__":

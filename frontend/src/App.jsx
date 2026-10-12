@@ -4,6 +4,7 @@ import { Routes, Route, Link } from "react-router-dom";
 import CrowdHistory from "./pages/CrowdHistory";
 import AdminPanel from "./pages/AdminPanel";
 import MultiRoomOverview from "./components/MultiRoomOverview";
+import CongestionAlerts from "./components/CongestionAlerts";
 import {
   API_BASE_URL,
   formatISTTime,
@@ -189,6 +190,7 @@ function Dashboard() {
         </div>
 
         <MultiRoomOverview />
+        <CongestionAlerts />
 
         <section className="overview">
           {/* LIVE CROWD */}

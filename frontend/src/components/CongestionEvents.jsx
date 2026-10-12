@@ -25,20 +25,19 @@ function CongestionEvents({ events }) {
         </div>
       </div>
 
-      <div className="event-list">
+      <div className="event-list" aria-label="Congestion event history">
         {events.map((event) => (
           <div className="event-row" key={event.id}>
             <div>
-              <strong>{formatISTDateTime(event.started_at)}</strong>
+              <strong>{event.room_name || "Legacy monitoring"}</strong>
 
-              <p>Peak: {event.peak_crowd} people</p>
+              <p>Started: {formatISTDateTime(event.started_at)}</p>
+              <p>Peak: {event.peak_crowd} · Threshold: {event.threshold}</p>
             </div>
 
             <div>
-              {event.ended_at ? (
-                <span>
-                  {calculateDuration(event.started_at, event.ended_at)} min
-                </span>
+              {event.resolved ? (
+                <span>RESOLVED · {formatDuration(event.duration_seconds, event.started_at, event.ended_at)}</span>
               ) : (
                 <span className="active-event">ACTIVE</span>
               )}
@@ -50,10 +49,10 @@ function CongestionEvents({ events }) {
   );
 }
 
-function calculateDuration(start, end) {
+function formatDuration(seconds, start, end) {
+  if (typeof seconds === "number") return `${Math.round(seconds / 60)} min`;
   const difference = Math.max(0, new Date(end) - new Date(start));
-
-  return Math.round(difference / 60000);
+  return `${Math.round(difference / 60000)} min`;
 }
 
 export default CongestionEvents;

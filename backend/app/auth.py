@@ -29,6 +29,10 @@ def validate_auth_configuration() -> None:
     get_token_secret()
 
 
+def normalize_username(value: str) -> str:
+    return value.strip().lower()
+
+
 def hash_password(password: str) -> str:
     salt = os.urandom(16)
     digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 210_000)
@@ -70,3 +74,9 @@ def require_admin(authorization: str | None = Header(default=None), db: Session 
         raise HTTPException(status_code=503, detail="Authentication is not configured. Set ADMIN_TOKEN_SECRET and restart the backend.") from error
     except (ValueError, KeyError, TypeError, UnicodeError, json.JSONDecodeError):
         raise HTTPException(status_code=401, detail="Invalid or expired admin token")
+
+
+def require_superadmin(admin: AdminUser = Depends(require_admin)) -> AdminUser:
+    if (admin.role or "ADMIN").upper() != "SUPERADMIN":
+        raise HTTPException(status_code=403, detail="Super administrator privileges required")
+    return admin

@@ -12,7 +12,9 @@ from app.models import *
 from app.routes.crowd import router as crowd_router
 from app.websocket.manager import manager
 from app.routes.admin import router as admin_router
+from app.routes.audit import router as audit_router
 from app.routes.monitoring import router as monitoring_router
+from app.routes.reports import router as reports_router
 from app.auth import AuthenticationConfigurationError, validate_auth_configuration
 
 logger = logging.getLogger(__name__)
@@ -85,7 +87,9 @@ async def safe_error_middleware(request: Request, call_next):
 # Crowd monitoring routes
 app.include_router(crowd_router)
 app.include_router(admin_router)
+app.include_router(audit_router)
 app.include_router(monitoring_router)
+app.include_router(reports_router)
 
 
 @app.exception_handler(AuthenticationConfigurationError)

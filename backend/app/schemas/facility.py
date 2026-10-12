@@ -41,3 +41,17 @@ class DoctorIn(BaseModel):
 class AdminLogin(BaseModel):
     username: str = Field(min_length=1, max_length=120)
     password: str = Field(min_length=8, max_length=200)
+
+
+class AdminCreate(BaseModel):
+    username: str = Field(min_length=1, max_length=120)
+    password: str = Field(min_length=8, max_length=200)
+    role: Literal["ADMIN", "SUPERADMIN"] = "ADMIN"
+    active: bool = True
+
+
+class AdminUpdate(BaseModel):
+    username: str = Field(min_length=1, max_length=120)
+    password: str | None = Field(default=None, min_length=8, max_length=200)
+    role: Literal["ADMIN", "SUPERADMIN"]
+    active: bool = True
