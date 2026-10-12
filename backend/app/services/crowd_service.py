@@ -249,7 +249,8 @@ def get_today_summary(
 
 def get_daily_history(
     db: Session,
-    days: int = 7
+    days: int = 7,
+    room_id: int | None = None,
 ):
 
     # ----------------------------------------
@@ -275,12 +276,14 @@ def get_daily_history(
     # Get readings
     # ----------------------------------------
 
-    readings = (
-        db.query(CrowdReading)
-        .filter(
+    query = db.query(CrowdReading).filter(
             CrowdReading.timestamp >= start_utc,
             CrowdReading.timestamp <= utc_now_naive()
         )
+    if room_id is not None:
+        query = query.filter(CrowdReading.room_id == room_id)
+    readings = (
+        query
         .order_by(
             CrowdReading.timestamp
         )
@@ -351,7 +354,8 @@ def get_daily_history(
 
 def get_hourly_history(
     db: Session,
-    selected_date: date | str
+    selected_date: date | str,
+    room_id: int | None = None,
 ):
 
     # ----------------------------------------
@@ -369,13 +373,15 @@ def get_hourly_history(
     # Get readings
     # ----------------------------------------
 
-    readings = (
-        db.query(CrowdReading)
-        .filter(
+    query = db.query(CrowdReading).filter(
             CrowdReading.timestamp >= start_utc,
             CrowdReading.timestamp < end_utc,
             CrowdReading.timestamp <= utc_now_naive()
         )
+    if room_id is not None:
+        query = query.filter(CrowdReading.room_id == room_id)
+    readings = (
+        query
         .order_by(
             CrowdReading.timestamp
         )

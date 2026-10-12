@@ -47,10 +47,19 @@ UPDATE_INTERVAL = get_float("UPDATE_INTERVAL", 0.5)
 if UPDATE_INTERVAL <= 0:
     raise RuntimeError("UPDATE_INTERVAL must be greater than zero")
 
+CAMERA_HEARTBEAT_INTERVAL = get_float("CAMERA_HEARTBEAT_INTERVAL", 5)
+CAMERA_RECONNECT_ATTEMPTS = get_int("CAMERA_RECONNECT_ATTEMPTS", 5)
+CAMERA_RECONNECT_DELAY = get_float("CAMERA_RECONNECT_DELAY", 2)
+CAMERA_RESTART_DELAY = get_float("CAMERA_RESTART_DELAY", 10)
+
+if CAMERA_HEARTBEAT_INTERVAL <= 0 or CAMERA_RECONNECT_ATTEMPTS <= 0 or CAMERA_RECONNECT_DELAY <= 0 or CAMERA_RESTART_DELAY <= 0:
+    raise RuntimeError("Camera heartbeat and retry settings must be greater than zero")
+
 # Number of frames an ID can disappear
 # before we consider the person to have left.
 TRACKING_GRACE_FRAMES = 15
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000").rstrip("/")
+CAMERA_AGENT_TOKEN = os.getenv("CAMERA_AGENT_TOKEN", "")
 
 TRACKER = "bytetrack.yaml"

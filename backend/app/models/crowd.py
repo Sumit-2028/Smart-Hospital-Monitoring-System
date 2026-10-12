@@ -3,7 +3,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     Integer,
-    String
+    String, ForeignKey
 )
 
 from app.database import Base
@@ -29,6 +29,9 @@ class CrowdReading(Base):
         Integer,
         nullable=False
     )
+
+    camera_id = Column(Integer, ForeignKey("cameras.id", ondelete="SET NULL"), nullable=True, index=True)
+    room_id = Column(Integer, ForeignKey("rooms.id", ondelete="SET NULL"), nullable=True, index=True)
 
     status = Column(
         String,
@@ -80,3 +83,6 @@ class CongestionEvent(Base):
         nullable=False,
         index=True
     )
+
+    camera_id = Column(Integer, ForeignKey("cameras.id", ondelete="SET NULL"), nullable=True, index=True)
+    room_id = Column(Integer, ForeignKey("rooms.id", ondelete="SET NULL"), nullable=True, index=True)

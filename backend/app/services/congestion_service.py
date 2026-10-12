@@ -13,6 +13,8 @@ def update_congestion_event(
     threshold: int,
     now: datetime | None = None,
     commit: bool = True,
+    room_id: int | None = None,
+    camera_id: int | None = None,
 ):
     """
     Start, update, or end a congestion event.
@@ -27,6 +29,7 @@ def update_congestion_event(
             and_(
                 CongestionEvent.resolved.is_(False),
                 CongestionEvent.ended_at.is_(None),
+                CongestionEvent.room_id == room_id,
             )
         )
         .order_by(

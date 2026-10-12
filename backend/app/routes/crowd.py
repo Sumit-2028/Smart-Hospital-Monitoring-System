@@ -16,6 +16,7 @@ from app.models.crowd import (
     CrowdReading,
     CongestionEvent
 )
+from app.models.facility import Camera, Room
 
 from app.schemas.crowd import (
     CrowdReadingCreate
@@ -52,11 +53,29 @@ async def create_crowd_reading(
     db: Session = Depends(get_db)
 ):
 
-    status = "CONGESTED" if data.person_count >= data.threshold else "NORMAL"
+    camera = None
+    room = None
+    if data.camera_id is not None:
+        camera = db.query(Camera).filter(Camera.id == data.camera_id, Camera.active.is_(True)).first()
+        if not camera:
+            raise HTTPException(status_code=422, detail="Camera is not registered or active")
+        room = db.query(Room).filter(Room.id == camera.room_id, Room.active.is_(True)).first()
+        if not room:
+            raise HTTPException(status_code=422, detail="Camera is not assigned to an active room")
+        threshold = max(1, round(room.capacity * room.warning_percentage / 100))
+        congestion_threshold = room.capacity
+        status = "CONGESTED" if data.person_count >= congestion_threshold else "WARNING" if data.person_count >= threshold else "NORMAL"
+    else:
+        if data.threshold is None:
+            raise HTTPException(status_code=422, detail="threshold is required for legacy readings")
+        threshold = data.threshold
+        status = "CONGESTED" if data.person_count >= threshold else "NORMAL"
 
     reading = CrowdReading(
         person_count=data.person_count,
-        threshold=data.threshold,
+        threshold=threshold,
+        camera_id=camera.id if camera else None,
+        room_id=room.id if room else None,
         status=status
     )
 
@@ -69,9 +88,11 @@ async def create_crowd_reading(
         event_status = update_congestion_event(
             db,
             data.person_count,
-            data.threshold,
+            congestion_threshold if room else threshold,
             now=reading.timestamp,
             commit=False,
+            room_id=room.id if room else None,
+            camera_id=camera.id if camera else None,
         )
         db.commit()
         db.refresh(reading)
@@ -99,6 +120,9 @@ async def create_crowd_reading(
         "threshold":
             reading.threshold,
 
+        "camera_id": reading.camera_id,
+        "room_id": reading.room_id,
+
         "status":
             reading.status,
 
@@ -108,6 +132,15 @@ async def create_crowd_reading(
         "timestamp":
             serialize_utc(timestamp)
     }
+
+    response.update({
+        "event_type": "crowd.reading",
+        "schema_version": 1,
+        "room_name": room.name if room else None,
+        "capacity": room.capacity if room else None,
+        "warning_percentage": room.warning_percentage if room else None,
+        "camera_status": camera.status if camera else None,
+    })
 
     # ----------------------------------------
     # WebSocket broadcast
@@ -152,12 +185,14 @@ def crowd_history(
         ge=1,
         le=90
     ),
+    room_id: int | None = Query(default=None, ge=1),
     db: Session = Depends(get_db)
 ):
 
     return get_daily_history(
         db,
-        days
+        days,
+        room_id=room_id,
     )
 
 
@@ -170,12 +205,14 @@ def crowd_history(
 )
 def hourly_history(
     selected_date: date,
+    room_id: int | None = Query(default=None, ge=1),
     db: Session = Depends(get_db)
 ):
 
     return get_hourly_history(
         db,
-        selected_date
+        selected_date,
+        room_id=room_id,
     )
 
 
@@ -185,11 +222,15 @@ def hourly_history(
 
 @router.get("/events")
 def congestion_events(
+    room_id: int | None = Query(default=None, ge=1),
     db: Session = Depends(get_db)
 ):
 
+    query = db.query(CongestionEvent)
+    if room_id is not None:
+        query = query.filter(CongestionEvent.room_id == room_id)
     events = (
-        db.query(CongestionEvent)
+        query
         .order_by(
             CongestionEvent.started_at.desc()
         )
@@ -222,7 +263,19 @@ def congestion_events(
                 event.threshold,
 
             "resolved":
-                event.resolved
+                event.resolved,
+            "camera_id": event.camera_id,
+            "room_id": event.room_id,
         })
 
     return result
+
+
+@router.get("/rooms/{room_id}/latest")
+def room_latest_reading(room_id: int, db: Session = Depends(get_db)):
+    reading = db.query(CrowdReading).filter(CrowdReading.room_id == room_id).order_by(CrowdReading.timestamp.desc()).first()
+    if not reading:
+        return None
+    return {"id": reading.id, "person_count": reading.person_count, "threshold": reading.threshold,
+            "status": reading.status, "camera_id": reading.camera_id, "room_id": reading.room_id,
+            "timestamp": serialize_utc(reading.timestamp)}

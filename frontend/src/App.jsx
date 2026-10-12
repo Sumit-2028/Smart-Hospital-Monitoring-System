@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Routes, Route, Link } from "react-router-dom";
 
 import CrowdHistory from "./pages/CrowdHistory";
+import AdminPanel from "./pages/AdminPanel";
+import MultiRoomOverview from "./components/MultiRoomOverview";
 import {
   API_BASE_URL,
   formatISTTime,
@@ -183,7 +185,10 @@ function Dashboard() {
           <Link to="/analytics" className="analytics-button">
             Crowd Analytics →
           </Link>
+          <Link to="/admin" className="back-button">Admin Configuration</Link>
         </div>
+
+        <MultiRoomOverview />
 
         <section className="overview">
           {/* LIVE CROWD */}
@@ -389,6 +394,7 @@ function App() {
       <Route path="/" element={<Dashboard />} />
 
       <Route path="/analytics" element={<CrowdHistory />} />
+      <Route path="/admin" element={<AdminPanel />} />
     </Routes>
   );
 }

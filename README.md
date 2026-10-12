@@ -127,9 +127,14 @@ CROWD_THRESHOLD=5
 CAMERA_INDEX=0
 UPDATE_INTERVAL=0.5
 BACKEND_URL=http://127.0.0.1:8000
+ADMIN_TOKEN_SECRET=generate-a-long-random-secret
+CAMERA_AGENT_TOKEN=generate-a-separate-camera-agent-secret
 ```
 
-Do not commit `.env`, passwords, or other credentials.
+`ADMIN_TOKEN_SECRET` is required before FastAPI starts because it signs admin
+tokens. `CAMERA_AGENT_TOKEN` is required for admin-managed camera processing;
+omit it only when using the legacy single-webcam compatibility mode. Do not
+commit `.env`, passwords, or other credentials.
 
 Start FastAPI:
 
@@ -421,3 +426,87 @@ python -m pip install -r requirements.txt
 - Treat RFID UIDs as identifiers, not secure credentials.
 - This project is an educational prototype and is not a certified medical
   device or a substitute for hospital safety controls.
+
+## Multi-room and administration phase
+
+The repository now supports additive room, camera, department, doctor, cabin,
+and admin-user records. Existing crowd rows remain valid because their room and
+camera columns are nullable. New camera-originated readings identify an active
+registered camera; the server derives the warning threshold from that camera's
+room capacity and warning percentage.
+
+Run the migration from `backend` after taking a normal PostgreSQL backup:
+
+```powershell
+python -m pip install -r requirements.txt
+$env:ADMIN_TOKEN_SECRET = "a-long-random-secret"
+$env:CAMERA_AGENT_TOKEN = "a-separate-camera-agent-secret"
+alembic upgrade head
+python create_admin.py
+```
+
+The migration is additive and does not delete existing tables or data. Its
+automatic downgrade is intentionally disabled; rollback requires a reviewed
+backup and a manually approved migration.
+
+Open `/admin`, sign in with the account created by `create_admin.py`, and create
+departments first, then rooms, then cameras. A `WEBCAM` source is a device index
+such as `0`; an `IP_STREAM` source must use an `http`, `https`, or `rtsp` URL.
+Camera source values are not returned by public status APIs.
+
+The computer-vision process reads active camera configuration through the
+authenticated camera-agent endpoint:
+
+```powershell
+cd "smart-hospital-monitoring\computer-vision"
+python -m app.main
+```
+
+Each configured camera runs in its own worker with its own capture handle,
+tracker, ROI, and failure state. A worker failure does not stop other workers.
+The current implementation loads one YOLO detector per worker to preserve
+independent Ultralytics persistent tracking state; measure GPU/CPU memory before
+running several high-resolution streams. Restart the CV process after changing
+camera configuration.
+
+If `CAMERA_AGENT_TOKEN` is omitted, the CV process retains the original
+single-webcam compatibility mode using `CAMERA_INDEX`, `CROWD_THRESHOLD`, and
+the legacy crowd payload. Configure the agent token to use admin-managed room
+and camera records.
+
+There is intentionally one active occupancy camera per room in this phase.
+Cross-camera person deduplication is not implemented. A disconnected feed
+reports its actual status and does not fabricate a crowd count.
+
+The multi-room dashboard is available at `/` and administration at `/admin`.
+Room-aware live messages include `event_type`, `schema_version`, room/camera
+identifiers, capacity, warning percentage, status, and timestamps. The legacy
+`POST /api/crowd/` payload with `person_count` and `threshold` remains supported
+when `camera_id` is omitted.
+
+Additional configuration variables:
+
+```env
+ADMIN_TOKEN_SECRET=long-random-value-used-to-sign-admin-tokens
+CAMERA_AGENT_TOKEN=separate-secret-used-by-the-CV-process
+```
+
+Automated checks added in this phase:
+
+```powershell
+cd computer-vision
+python -m unittest discover -s tests -v
+
+cd ..\backend
+$env:DATABASE_URL = "sqlite:///./test-auth.db"
+python -m unittest discover -s tests -v
+
+cd ..\frontend
+npm run lint
+npm run build
+```
+
+The CV and authentication tests use pure logic/mocks and do not require a
+physical camera. Three-stream performance, phone stream compatibility, actual
+FPS, latency, CPU/RAM, and GPU memory still require measurement on the target
+hardware and are not claimed as verified by these tests.

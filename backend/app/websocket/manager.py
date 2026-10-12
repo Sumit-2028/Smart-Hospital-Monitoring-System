@@ -1,4 +1,9 @@
+import asyncio
+import logging
+
 from fastapi import WebSocket
+
+logger = logging.getLogger(__name__)
 
 
 class ConnectionManager:
@@ -15,19 +20,20 @@ class ConnectionManager:
             self.active_connections.remove(websocket)
 
     async def broadcast(self, data: dict):
+        connections = self.active_connections.copy()
 
-        disconnected = []
-
-        for connection in self.active_connections.copy():
-
+        async def send(connection):
             try:
-                await connection.send_json(data)
+                await asyncio.wait_for(connection.send_json(data), timeout=2)
+                return connection, None
+            except Exception as error:
+                return connection, error
 
-            except Exception:
-                disconnected.append(connection)
-
-        for connection in disconnected:
-            self.disconnect(connection)
+        results = await asyncio.gather(*(send(connection) for connection in connections))
+        for connection, error in results:
+            if error is not None:
+                logger.warning("websocket broadcast failed; removing client", exc_info=(type(error), error, error.__traceback__))
+                self.disconnect(connection)
 
 
 manager = ConnectionManager()
