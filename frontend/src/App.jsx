@@ -189,8 +189,8 @@ function Dashboard() {
           <Link to="/admin" className="back-button">Admin Configuration</Link>
         </div>
 
-        <MultiRoomOverview />
         <CongestionAlerts />
+        <MultiRoomOverview />
 
         <section className="overview">
           {/* LIVE CROWD */}
