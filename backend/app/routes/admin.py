@@ -1,5 +1,5 @@
 import logging
-from urllib.parse import urlparse
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
@@ -17,7 +17,7 @@ from app.auth import (
 )
 from app.database import get_db
 from app.models.facility import AdminUser, Camera, Department, Doctor, Room
-from app.schemas.facility import AdminCreate, AdminLogin, AdminUpdate, CameraIn, DepartmentIn, DoctorIn, RoomIn
+from app.schemas.facility import AdminCreate, AdminLogin, AdminUpdate, CameraIn, CameraUpdate, DepartmentIn, DoctorIn, RoomIn
 from app.services.audit_service import add_audit, record_failed_audit
 
 logger = logging.getLogger(__name__)
@@ -63,14 +63,29 @@ def _audit_failure(db, actor, action, resource_type=None, resource_id=None, reas
                                context={"reason": reason} if reason else None)
 
 
-def _validate_camera_source(data: CameraIn):
-    if data.source_type == "WEBCAM":
+def _validate_camera_source(source_type: str, source: str) -> str:
+    """Validate and normalize a worker source without logging or returning it."""
+    value = source.strip()
+    if not value or any(character in value for character in "\r\n\x00"):
+        raise HTTPException(status_code=422, detail="Camera source must not be empty or contain control characters")
+
+    if source_type == "WEBCAM":
+        if not value.isdigit():
+            raise HTTPException(status_code=422, detail="WEBCAM source must be a non-negative device index")
+        return str(int(value))
+
+    if source_type == "IP_STREAM":
         try:
-            int(data.source)
+            parsed = urlsplit(value)
+            hostname = parsed.hostname
+            _ = parsed.port
         except ValueError as error:
-            raise HTTPException(status_code=422, detail="WEBCAM source must be a device index") from error
-    elif urlparse(data.source).scheme not in {"http", "https", "rtsp"}:
-        raise HTTPException(status_code=422, detail="IP_STREAM source must use http, https, or rtsp")
+            raise HTTPException(status_code=422, detail="IP_STREAM source is not a valid network URL") from error
+        if parsed.scheme.lower() not in {"http", "https", "rtsp"} or not parsed.netloc or not hostname:
+            raise HTTPException(status_code=422, detail="IP_STREAM source must be an HTTP, HTTPS, or RTSP URL with a host")
+        return value
+
+    raise HTTPException(status_code=422, detail="Unsupported camera source type")
 
 
 @router.post("/login")
@@ -295,7 +310,11 @@ def camera_edit_details(camera_id: int, _: AdminUser = Depends(require_admin), d
     camera = db.get(Camera, camera_id)
     if not camera:
         raise HTTPException(status_code=404, detail="Camera not found")
-    return {**camera_json(camera), "source": camera.source}
+    return {
+        **camera_json(camera),
+        "source_configured": bool(camera.source),
+        "source_hint": "device index configured" if camera.source_type == "WEBCAM" else "network stream configured",
+    }
 
 
 @router.post("/cameras")
@@ -305,8 +324,8 @@ def create_camera(data: CameraIn, actor: AdminUser = Depends(require_admin), db:
         raise HTTPException(status_code=400, detail="Camera room must be an active room")
     if data.active and db.query(Camera).filter(Camera.room_id == data.room_id, Camera.active.is_(True)).first():
         raise HTTPException(status_code=409, detail="Only one active occupancy camera is allowed per room")
-    _validate_camera_source(data)
-    camera = Camera(**data.model_dump())
+    source = _validate_camera_source(data.source_type, data.source)
+    camera = Camera(**{**data.model_dump(), "source": source})
     db.add(camera)
     try:
         db.flush()
@@ -322,7 +341,7 @@ def create_camera(data: CameraIn, actor: AdminUser = Depends(require_admin), db:
 
 
 @router.put("/cameras/{camera_id}")
-def update_camera(camera_id: int, data: CameraIn, actor: AdminUser = Depends(require_admin), db: Session = Depends(get_db)):
+def update_camera(camera_id: int, data: CameraUpdate, actor: AdminUser = Depends(require_admin), db: Session = Depends(get_db)):
     camera = db.get(Camera, camera_id)
     room = db.get(Room, data.room_id)
     if not camera:
@@ -331,8 +350,10 @@ def update_camera(camera_id: int, data: CameraIn, actor: AdminUser = Depends(req
         raise HTTPException(status_code=400, detail="Camera room must be an active room")
     if data.active and db.query(Camera).filter(Camera.room_id == data.room_id, Camera.active.is_(True), Camera.id != camera_id).first():
         raise HTTPException(status_code=409, detail="Only one active occupancy camera is allowed per room")
-    _validate_camera_source(data)
-    for key, value in data.model_dump().items():
+    source_type = data.source_type or camera.source_type
+    source = _validate_camera_source(source_type, data.source if data.source and data.source.strip() else camera.source)
+    values = {**data.model_dump(), "source_type": source_type, "source": source}
+    for key, value in values.items():
         setattr(camera, key, value)
     try:
         _commit_audited(db, actor, "CAMERA_UPDATED", "CAMERA", camera.id,

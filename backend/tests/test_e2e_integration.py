@@ -19,7 +19,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app import main
-from app.auth import hash_password
+from app.auth import hash_password, issue_token
 from app.database import Base, get_db
 from app.models.audit import AuditLog
 from app.models.crowd import CongestionEvent, CrowdReading
@@ -177,6 +177,15 @@ class EndToEndIntegrationTests(unittest.TestCase):
         self.assertEqual(resolved["event"], "ENDED")
         self.assertEqual(resolved["event_details"]["status"], "RESOLVED")
 
+        summary = self.client.get("/api/monitoring/summary")
+        self.assertEqual(summary.status_code, 200)
+        summary_payload = summary.json()
+        self.assertEqual(summary_payload["total_count"], 11)
+        self.assertEqual(summary_payload["complete_room_count"], 2)
+        room_counts = {item["room_id"]: item["current_count"] for item in summary_payload["rooms"]}
+        self.assertEqual(room_counts[self.room_one.id], 7)
+        self.assertEqual(room_counts[self.room_two.id], 4)
+
         active = self.client.get("/api/crowd/alerts/active", params={"room_id": self.room_two.id})
         self.assertEqual(active.status_code, 200)
         self.assertEqual(active.json()["total"], 1)
@@ -245,6 +254,58 @@ class EndToEndIntegrationTests(unittest.TestCase):
         rooms = self.client.get("/api/monitoring/rooms")
         room = next(item for item in rooms.json() if item["room_id"] == self.room_two.id)
         self.assertEqual(room["camera"]["status"], "CONNECTED")
+
+    def test_room_detail_and_today_summary_are_room_scoped(self):
+        detail = self.client.get(f"/api/monitoring/rooms/{self.room_one.id}")
+        self.assertEqual(detail.status_code, 200)
+        payload = detail.json()
+        self.assertEqual(payload["room_id"], self.room_one.id)
+        self.assertEqual(payload["cameras"][0]["id"], self.camera_one.id)
+        self.assertNotIn("source", payload["cameras"][0])
+
+        summary = self.client.get("/api/crowd/today", params={"room_id": self.room_one.id})
+        self.assertEqual(summary.status_code, 200)
+        self.assertIn("average_crowd", summary.json())
+        self.assertIn("peak_crowd", summary.json())
+
+        missing = self.client.get("/api/monitoring/rooms/999999")
+        self.assertEqual(missing.status_code, 404)
+
+    def test_camera_frame_ingestion_is_authenticated_and_room_bound(self):
+        frame = b"\xff\xd8test-jpeg\xff\xd9"
+        accepted = self.client.post(
+            f"/api/monitoring/internal/cameras/{self.camera_one.id}/frame",
+            headers={**self.camera_headers, "Content-Type": "image/jpeg"},
+            content=frame,
+        )
+        self.assertEqual(accepted.status_code, 202, accepted.text)
+        self.assertEqual(accepted.json()["room_id"], self.room_one.id)
+
+        unauthorized = self.client.get(
+            f"/api/monitoring/rooms/{self.room_one.id}/cameras/{self.camera_one.id}/stream",
+            headers={"Origin": "http://localhost:5173"},
+        )
+        self.assertEqual(unauthorized.status_code, 401)
+        self.assertEqual(unauthorized.headers.get("access-control-allow-origin"), "http://localhost:5173")
+
+        wrong_room = self.client.get(
+            f"/api/monitoring/rooms/{self.room_two.id}/cameras/{self.camera_one.id}/stream",
+            headers=self.admin_headers,
+        )
+        self.assertEqual(wrong_room.status_code, 404)
+
+    def test_expired_admin_token_cannot_open_camera_stream(self):
+        # Build the token without printing or persisting its value.  This
+        # exercises the same expiry validation used by the live stream route.
+        with patch("app.auth.time.time", return_value=1000):
+            expired = issue_token("e2e-superadmin")
+        with patch("app.auth.time.time", return_value=1000 + 8 * 3600 + 1):
+            response = self.client.get(
+                f"/api/monitoring/rooms/{self.room_one.id}/cameras/{self.camera_one.id}/stream",
+                headers={"Authorization": f"Bearer {expired}"},
+            )
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()["detail"], "Invalid or expired admin token")
 
     def test_invalid_camera_and_authentication_are_rejected_without_data_changes(self):
         before = self.client.get("/api/crowd/rooms/999999/latest")

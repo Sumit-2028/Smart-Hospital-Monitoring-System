@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from app import camera_manager
+from app.camera_manager import parse_camera_source
 
 
 def camera_config(camera_id=1):
@@ -66,6 +67,37 @@ class CameraManagerTests(unittest.TestCase):
              patch.object(camera_manager, "PersonDetector", return_value=FakeDetector()), \
              patch.object(camera_manager.CameraWorker, "heartbeat", new=fake_heartbeat):
             worker = camera_manager.CameraWorker(camera_config(), threading.Event())
+            worker.run()
+
+        self.assertIn("ERROR", statuses)
+        self.assertTrue(all(c.released for c in captures))
+
+    def test_local_and_network_source_values_are_parsed_for_opencv(self):
+        self.assertEqual(parse_camera_source("WEBCAM", "0"), 0)
+        self.assertEqual(parse_camera_source("WEBCAM", " 1 "), 1)
+        self.assertEqual(parse_camera_source("IP_STREAM", "http://192.168.1.20:8080/video"), "http://192.168.1.20:8080/video")
+        self.assertEqual(parse_camera_source("IP_STREAM", "rtsp://example.test/live"), "rtsp://example.test/live")
+
+        for source_type, source in (("WEBCAM", "-1"), ("WEBCAM", "camera"), ("IP_STREAM", "not-a-url"), ("UNKNOWN", "0")):
+            with self.assertRaises(ValueError):
+                parse_camera_source(source_type, source)
+        self.assertFalse(camera_manager.is_valid_frame(SimpleNamespace(shape=(0, 0, 3), size=0)))
+        self.assertTrue(camera_manager.is_valid_frame(self.frame))
+
+    def test_unreachable_network_camera_is_bounded_and_releases_capture(self):
+        captures = [FakeCapture(opened=False), FakeCapture(opened=False)]
+        statuses = []
+
+        def fake_heartbeat(_worker, status, **_kwargs):
+            statuses.append(status)
+
+        config = {**camera_config(), "source_type": "IP_STREAM", "source": "http://192.0.2.1:8080/video"}
+        with patch.object(camera_manager, "CAMERA_RECONNECT_ATTEMPTS", 2), \
+             patch.object(camera_manager, "CAMERA_RECONNECT_DELAY", 0.001), \
+             patch.object(camera_manager.cv2, "VideoCapture", side_effect=captures), \
+             patch.object(camera_manager, "PersonDetector", return_value=FakeDetector()), \
+             patch.object(camera_manager.CameraWorker, "heartbeat", new=fake_heartbeat):
+            worker = camera_manager.CameraWorker(config, threading.Event())
             worker.run()
 
         self.assertIn("ERROR", statuses)
@@ -199,6 +231,28 @@ class CameraManagerTests(unittest.TestCase):
             self.assertFalse(manager._start_worker(config))
             self.assertEqual(len(FakeWorker.instances), 1)
 
+    def test_frame_relay_uses_worker_http_session_without_opening_another_capture(self):
+        class FakeSession:
+            def __init__(self):
+                self.calls = []
+
+            def post(self, url, **kwargs):
+                self.calls.append((url, kwargs))
+                return FakeResponse()
+
+        session = FakeSession()
+        encoded = SimpleNamespace(tobytes=lambda: b"jpeg-bytes")
+        worker = camera_manager.CameraWorker(camera_config(), threading.Event())
+        worker.http = session
+        with patch.object(camera_manager.cv2, "imencode", return_value=(True, encoded)):
+            worker.post_frame(object())
+
+        self.assertEqual(len(session.calls), 1)
+        url, kwargs = session.calls[0]
+        self.assertIn("/api/monitoring/internal/cameras/1/frame", url)
+        self.assertEqual(kwargs["data"], b"jpeg-bytes")
+        self.assertEqual(kwargs["headers"]["Content-Type"], "image/jpeg")
+
     def test_one_worker_start_failure_does_not_block_other_cameras(self):
         class PartiallyFailingWorker:
             def __init__(self, config, _stop_event):
@@ -257,6 +311,37 @@ class CameraManagerTests(unittest.TestCase):
 
             self.assertIs(manager.workers[2], other_worker)
             self.assertTrue(manager.workers[2].is_alive())
+            manager.stop()
+
+    def test_local_and_network_workers_coexist_without_duplicate_starts(self):
+        class FakeWorker:
+            instances = []
+
+            def __init__(self, config, _stop_event):
+                self.config = config
+                self.alive = False
+                self.__class__.instances.append(self)
+
+            def start(self):
+                self.alive = True
+
+            def is_alive(self):
+                return self.alive
+
+            def stop(self):
+                self.alive = False
+
+            def join(self, timeout):
+                return None
+
+        local = camera_config(1)
+        network = {**camera_config(2), "source_type": "IP_STREAM", "source": "http://192.168.1.20:8080/video"}
+        with patch.object(camera_manager, "CameraWorker", FakeWorker):
+            manager = camera_manager.CameraProcessingManager([local, network])
+            manager.sync_configs([local, network])
+            self.assertEqual(len(FakeWorker.instances), 2)
+            self.assertEqual(manager.workers[1].config["source_type"], "WEBCAM")
+            self.assertEqual(manager.workers[2].config["source_type"], "IP_STREAM")
             manager.stop()
 
 

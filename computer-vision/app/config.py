@@ -47,6 +47,12 @@ UPDATE_INTERVAL = get_float("UPDATE_INTERVAL", 0.5)
 if UPDATE_INTERVAL <= 0:
     raise RuntimeError("UPDATE_INTERVAL must be greater than zero")
 
+FRAME_STREAM_INTERVAL = get_float("FRAME_STREAM_INTERVAL", 0.2)
+FRAME_JPEG_QUALITY = get_int("FRAME_JPEG_QUALITY", 75)
+
+if FRAME_STREAM_INTERVAL <= 0 or not 1 <= FRAME_JPEG_QUALITY <= 100:
+    raise RuntimeError("Frame stream interval must be positive and JPEG quality must be between 1 and 100")
+
 CAMERA_HEARTBEAT_INTERVAL = get_float("CAMERA_HEARTBEAT_INTERVAL", 5)
 CAMERA_RECONNECT_ATTEMPTS = get_int("CAMERA_RECONNECT_ATTEMPTS", 5)
 CAMERA_RECONNECT_DELAY = get_float("CAMERA_RECONNECT_DELAY", 2)

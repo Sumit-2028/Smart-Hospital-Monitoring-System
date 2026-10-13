@@ -1,27 +1,26 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Routes, Route, Link } from "react-router-dom";
 
 import CrowdHistory from "./pages/CrowdHistory";
 import AdminPanel from "./pages/AdminPanel";
+import RoomMonitoring from "./pages/RoomMonitoring";
+import CrowdSummary from "./pages/CrowdSummary";
+import HospitalCrowdSummary from "./components/HospitalCrowdSummary";
 import MultiRoomOverview from "./components/MultiRoomOverview";
 import CongestionAlerts from "./components/CongestionAlerts";
-import {
-  API_BASE_URL,
-  formatISTTime,
-  IST_TIME_ZONE,
-  WS_URL,
-} from "./config";
+import { IST_TIME_ZONE } from "./config";
 
 function Dashboard() {
-  const [personCount, setPersonCount] = useState(0);
-  const [threshold, setThreshold] = useState(null);
-  const [status, setStatus] = useState("NORMAL");
+  const [hospitalSummary, setHospitalSummary] = useState(null);
   const [connected, setConnected] = useState(false);
-  const [lastUpdate, setLastUpdate] = useState("--");
   const [connectionState, setConnectionState] = useState("CONNECTING");
-  const [error, setError] = useState("");
 
   const [currentTime, setCurrentTime] = useState(new Date());
+  const handleSummaryChange = useCallback((summary) => setHospitalSummary(summary), []);
+  const handleConnectionState = useCallback((state) => {
+    setConnectionState(state);
+    setConnected(state === "CONNECTED");
+  }, []);
 
   // ----------------------------------------
   // Current time
@@ -37,102 +36,6 @@ function Dashboard() {
     };
   }, []);
 
-  // ----------------------------------------
-  // Hydrate the dashboard from persisted state before the next live update.
-  useEffect(() => {
-    const controller = new AbortController();
-
-    fetch(`${API_BASE_URL}/api/crowd/latest`, { signal: controller.signal })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("Unable to load the latest crowd reading");
-        }
-
-        return response.json();
-      })
-      .then((data) => {
-        if (!data) {
-          return;
-        }
-
-        setPersonCount(data.person_count);
-        setThreshold(data.threshold);
-        setStatus(data.status);
-        setLastUpdate(formatISTTime(data.timestamp));
-      })
-      .catch((fetchError) => {
-        if (fetchError.name !== "AbortError") {
-          setError("Live data is not available yet.");
-        }
-      });
-
-    return () => controller.abort();
-  }, []);
-
-  // WebSocket live updates with a small reconnect delay for temporary outages.
-  useEffect(() => {
-    let socket;
-    let reconnectTimer;
-    let disposed = false;
-
-    const connect = () => {
-      if (disposed) {
-        return;
-      }
-
-      setConnectionState("CONNECTING");
-      socket = new WebSocket(WS_URL);
-
-      socket.onopen = () => {
-        setConnected(true);
-        setConnectionState("CONNECTED");
-        setError("");
-      };
-
-      socket.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-
-          if (
-            typeof data.person_count !== "number" ||
-            typeof data.threshold !== "number"
-          ) {
-            return;
-          }
-
-          setPersonCount(data.person_count);
-          setThreshold(data.threshold);
-          setStatus(data.status === "CONGESTED" ? "CONGESTED" : "NORMAL");
-          setLastUpdate(formatISTTime(data.timestamp));
-        } catch {
-          setError("Received an invalid live crowd update.");
-        }
-      };
-
-      socket.onclose = () => {
-        setConnected(false);
-        setConnectionState("RECONNECTING");
-
-        if (!disposed) {
-          reconnectTimer = setTimeout(connect, 3000);
-        }
-      };
-
-      socket.onerror = () => {
-        setConnected(false);
-        setConnectionState("RECONNECTING");
-      };
-    };
-
-    connect();
-
-    return () => {
-      disposed = true;
-      clearTimeout(reconnectTimer);
-      socket?.close();
-    };
-  }, []);
-
   const currentTimeText = currentTime.toLocaleTimeString("en-IN", {
     timeZone: IST_TIME_ZONE,
     hour: "2-digit",
@@ -141,10 +44,8 @@ function Dashboard() {
     hour12: true,
   });
 
-  const isCongested = status === "CONGESTED";
-  const occupancyPercent = threshold
-    ? Math.min((personCount / threshold) * 100, 100)
-    : 0;
+  const isCongested = (hospitalSummary?.congested_room_count || 0) > 0;
+  const personCount = hospitalSummary?.total_count ?? 0;
 
   return (
     <div className="dashboard">
@@ -179,7 +80,6 @@ function Dashboard() {
       </header>
 
       <main>
-        {error && <div className="system-message">{error}</div>}
         {/* Analytics Navigation */}
 
         <div className="analytics-navigation">
@@ -193,61 +93,11 @@ function Dashboard() {
         <MultiRoomOverview />
 
         <section className="overview">
-          {/* LIVE CROWD */}
-
-          <div className="card crowd-card">
-            <div className="card-header">
-              <div>
-                <p className="label">WAITING AREA</p>
-
-                <h2>Live Crowd Monitoring</h2>
-              </div>
-
-              <div
-                className={
-                  isCongested ? "status-badge danger" : "status-badge normal"
-                }
-              >
-                {isCongested ? "CONGESTED" : "NORMAL"}
-              </div>
-            </div>
-
-            <div className="crowd-number" aria-live="polite">
-              {personCount}
-            </div>
-
-            <p className="people-text">PEOPLE DETECTED</p>
-
-            <div className="progress-container">
-              <div className="progress-info">
-                <span>Occupancy</span>
-
-                <span>
-                  {personCount} / {threshold ?? "--"}
-                </span>
-              </div>
-
-              <div
-                className="progress-bar"
-                role="progressbar"
-                aria-valuenow={personCount}
-                aria-valuemin="0"
-                aria-valuemax={threshold || 0}
-                aria-label="Waiting area occupancy"
-              >
-                <div
-                  className={
-                    isCongested ? "progress-fill danger-fill" : "progress-fill"
-                  }
-                  style={{
-                    width: `${occupancyPercent}%`,
-                  }}
-                />
-              </div>
-            </div>
-
-            <div className="last-update">Last crowd update: {lastUpdate}</div>
-          </div>
+          {/* HOSPITAL-WIDE CROWD SUMMARY */}
+          <HospitalCrowdSummary
+            onSummaryChange={handleSummaryChange}
+            onConnectionState={handleConnectionState}
+          />
 
           {/* AIR QUALITY */}
 
@@ -311,10 +161,10 @@ function Dashboard() {
                 <div className="alert-icon">!</div>
 
                 <div>
-                  <strong>Waiting area congested</strong>
+                  <strong>{hospitalSummary.congested_room_count} room{hospitalSummary.congested_room_count === 1 ? "" : "s"} congested</strong>
 
                   <p>
-                    {personCount} people detected. Threshold is {threshold}.
+                    {personCount} people detected across the hospital. Open Total Crowd for room details.
                   </p>
                 </div>
               </div>
@@ -323,7 +173,7 @@ function Dashboard() {
                 <div className="alert-icon">✓</div>
 
                 <div>
-                  <strong>Waiting area normal</strong>
+                  <strong>Hospital crowd within room limits</strong>
 
                   <p>{personCount} people currently detected.</p>
                 </div>
@@ -394,6 +244,9 @@ function App() {
   return (
     <Routes>
       <Route path="/" element={<Dashboard />} />
+
+      <Route path="/monitoring/rooms/:roomId" element={<RoomMonitoring />} />
+      <Route path="/crowd-summary" element={<CrowdSummary />} />
 
       <Route path="/analytics" element={<CrowdHistory />} />
       <Route path="/admin" element={<AdminPanel />} />

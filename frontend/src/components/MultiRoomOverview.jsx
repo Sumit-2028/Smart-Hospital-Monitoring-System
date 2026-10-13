@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 
 import { API_BASE_URL, WS_URL, formatISTTime } from "../config";
 
@@ -88,15 +89,20 @@ function MultiRoomOverview() {
           const percentage = Math.min((room.current_count / room.capacity) * 100, 100);
           const stale = !room.camera || room.camera.status !== "CONNECTED";
           const feedStatus = room.camera?.status || "UNAVAILABLE";
-          return <article className="room-card card" key={room.room_id}>
-            <div className="room-card-heading"><div><p className="label">{room.room_type}</p><h3>{room.room_name}</h3></div><span className={`status-badge ${room.status === "NORMAL" ? "normal" : "danger"}`}>{room.status}</span></div>
+          return <Link
+            className="room-card room-card-link card"
+            key={room.room_id}
+            to={`/monitoring/rooms/${room.room_id}`}
+            aria-label={`Open monitoring for ${room.room_name}`}
+          >
+            <div className="room-card-heading"><div><p className="label">{room.room_type}</p><h3>{room.room_name}</h3></div><span className={`status-badge ${room.status === "NORMAL" ? "normal" : room.status === "WARNING" ? "warning" : "danger"}`}>{room.status}</span></div>
             <p className="room-department">{room.department_name || "Unassigned department"}</p>
             <div className="room-count">{room.current_count}<small> / {room.capacity}</small></div>
             <div className="progress-bar"><div className={`progress-fill ${room.status === "NORMAL" ? "" : "danger-fill"}`} style={{ width: `${percentage}%` }} /></div>
             <p className={stale ? "feed-stale" : "feed-ok"}>{stale ? `FEED ${feedStatus}` : "FEED CONNECTED"}</p>
             <p className="last-update">Last frame: {room.camera?.last_frame_at ? formatISTTime(room.camera.last_frame_at) : "--"}</p>
             <p className="last-update">Last reading: {room.last_update ? formatISTTime(room.last_update) : "--"}</p>
-          </article>;
+          </Link>;
         })}
       </div>
     </section>

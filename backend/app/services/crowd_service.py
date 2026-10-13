@@ -54,21 +54,20 @@ def get_today_start():
 # ==================================================
 
 def get_today_summary(
-    db: Session
+    db: Session,
+    room_id: int | None = None,
 ):
 
     start = get_today_start()
     now = utc_now_naive()
 
-    readings = (
-        db.query(CrowdReading)
-        .filter(
-            CrowdReading.timestamp >= start,
-            CrowdReading.timestamp <= now
-        )
-        .order_by(CrowdReading.timestamp)
-        .all()
+    query = db.query(CrowdReading).filter(
+        CrowdReading.timestamp >= start,
+        CrowdReading.timestamp <= now,
     )
+    if room_id is not None:
+        query = query.filter(CrowdReading.room_id == room_id)
+    readings = query.order_by(CrowdReading.timestamp).all()
 
     # ----------------------------------------
     # No readings
@@ -83,6 +82,7 @@ def get_today_summary(
             "minimum_crowd": 0,
             "congestion_events": 0,
             "congestion_minutes": 0,
+            "reading_count": 0,
             "busiest_hour": None,
             "threshold": None,
             "current_count": 0,
@@ -165,17 +165,16 @@ def get_today_summary(
     # Congestion events
     # ----------------------------------------
 
-    events = (
-        db.query(CongestionEvent)
-        .filter(
-            CongestionEvent.started_at <= now,
-            or_(
-                CongestionEvent.ended_at.is_(None),
-                CongestionEvent.ended_at >= start,
-            )
-        )
-        .all()
+    events_query = db.query(CongestionEvent).filter(
+        CongestionEvent.started_at <= now,
+        or_(
+            CongestionEvent.ended_at.is_(None),
+            CongestionEvent.ended_at >= start,
+        ),
     )
+    if room_id is not None:
+        events_query = events_query.filter(CongestionEvent.room_id == room_id)
+    events = events_query.all()
 
     congestion_minutes = 0
 
@@ -225,6 +224,9 @@ def get_today_summary(
                 congestion_minutes,
                 2
             ),
+
+        "reading_count":
+            len(readings),
 
         "busiest_hour":
             busiest_hour,

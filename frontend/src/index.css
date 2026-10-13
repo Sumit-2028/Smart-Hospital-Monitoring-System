@@ -782,6 +782,97 @@ a {
   grid-column: auto;
 }
 
+.hospital-summary-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.hospital-summary-link:hover,
+.hospital-summary-link:focus-visible {
+  border-color: #78b8b3;
+  box-shadow: 0 14px 30px rgba(25, 73, 91, .12);
+  outline: none;
+  transform: translateY(-2px);
+}
+
+.summary-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 22px 0;
+}
+
+.summary-stat-grid > div {
+  display: grid;
+  gap: 3px;
+}
+
+.summary-stat-grid strong {
+  color: #163d5d;
+  font-family: "Space Grotesk", "Segoe UI", sans-serif;
+  font-size: 19px;
+}
+
+.summary-stat-grid span,
+.summary-freshness,
+.summary-open-link,
+.summary-inline-error {
+  color: #678195;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.summary-freshness {
+  margin-top: auto;
+}
+
+.summary-open-link {
+  display: inline-block;
+  margin-top: 15px;
+  color: #197b77;
+  font-weight: 800;
+}
+
+.summary-inline-error { color: #b84f47; }
+
+.crowd-summary-page { max-width: 1440px; }
+.summary-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 18px;
+}
+
+.summary-hero > div:first-child { display: grid; gap: 6px; }
+.summary-hero > div:first-child strong {
+  color: #153b5a;
+  font-family: "Space Grotesk", "Segoe UI", sans-serif;
+  font-size: clamp(48px, 7vw, 78px);
+  line-height: .9;
+}
+.summary-hero > div:first-child span { color: #678195; font-size: 12px; }
+.summary-hero-stats { display: grid; grid-template-columns: repeat(4, minmax(100px, 1fr)); gap: 18px; }
+.summary-notice { margin: 0 0 22px; padding: 13px 16px; border-radius: 10px; font-size: 12px; }
+.summary-complete { color: #17796f; background: #e3f6f0; }
+.summary-partial { color: #956727; background: #fff3d8; }
+.summary-room-section { min-width: 0; }
+.summary-room-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 350px), 1fr)); gap: 18px; }
+.summary-room-card { color: inherit; text-decoration: none; min-width: 0; }
+.summary-room-card:hover, .summary-room-card:focus-visible { border-color: #78b8b3; outline: none; }
+.summary-room-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.summary-room-heading h3 { margin: 4px 0 0; color: #153b5a; font-family: "Space Grotesk", "Segoe UI", sans-serif; font-size: 20px; }
+.summary-room-count { display: flex; align-items: baseline; gap: 6px; margin: 22px 0 10px; }
+.summary-room-count strong { color: #153b5a; font-family: "Space Grotesk", "Segoe UI", sans-serif; font-size: 48px; line-height: 1; }
+.summary-room-count span { color: #678195; font-size: 12px; }
+.summary-room-meta { display: flex; justify-content: space-between; gap: 12px; margin-top: 12px; color: #678195; font-size: 10px; }
+.summary-room-alert { color: #b84f47; font-size: 11px; font-weight: 700; }
+
+@media (max-width: 800px) {
+  .summary-hero { align-items: flex-start; flex-direction: column; }
+  .summary-hero-stats { width: 100%; grid-template-columns: repeat(2, minmax(120px, 1fr)); }
+}
+
 @media (max-width: 1100px) {
   .dashboard > main > .overview {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -997,4 +1088,76 @@ a {
   .management-toolbar { align-items: flex-start; flex-direction: column; }
   .search-box { width: 100%; }
   .details-grid { grid-template-columns: 1fr; }
+}
+
+/* Dedicated room monitoring */
+.room-card-link { display: block; color: inherit; text-decoration: none; }
+.room-card-link:hover, .room-card-link:focus-visible { color: inherit; outline: none; transform: translateY(-2px); box-shadow: 0 12px 32px rgba(25, 54, 77, 0.09); }
+.room-card-link:focus-visible { border-color: #31a997; box-shadow: 0 0 0 3px rgba(49, 169, 151, 0.18); }
+.room-monitor-page { max-width: 1520px; }
+.room-page-header { align-items: flex-end; }
+.room-page-actions { display: flex; align-items: center; justify-content: flex-end; gap: 16px; flex-wrap: wrap; }
+.room-page-state { display: grid; min-height: 220px; place-items: center; align-content: center; gap: 12px; text-align: center; }
+.room-page-state h1 { color: #19344f; font-family: "Space Grotesk", "Segoe UI", sans-serif; font-size: 28px; }
+.room-page-state p { max-width: 480px; color: #6f8294; font-size: 13px; line-height: 1.55; }
+.room-detail-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 18px; padding: 22px 24px; }
+.room-detail-title { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.room-detail-title h2 { color: #19344f; font-family: "Space Grotesk", "Segoe UI", sans-serif; font-size: 23px; }
+.room-detail-copy { margin-top: 7px; color: #718497; font-size: 12px; }
+.room-detail-times { display: grid; min-width: 240px; gap: 9px; color: #8293a1; font-size: 10px; text-align: right; }
+.room-detail-times strong { display: block; margin-top: 3px; color: #486276; font-size: 11px; font-weight: 700; }
+.room-monitor-layout { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.7fr); align-items: stretch; gap: 18px; }
+.room-camera-panel, .room-stats-panel { min-width: 0; }
+.room-camera-panel { padding: 22px; }
+.camera-status { display: inline-flex; padding: 7px 9px; border-radius: 999px; color: #667c8e; font-size: 10px; font-weight: 800; letter-spacing: 0.06em; background: #edf2f4; }
+.camera-status-connected { color: #147d70; background: #dff6f0; }
+.camera-status-reconnecting, .camera-status-starting, .camera-status-stale { color: #976b29; background: #fff3d8; }
+.camera-status-disconnected, .camera-status-error { color: #b84f47; background: #ffebe7; }
+.status-badge.warning { color: #976b29; background: #fff3d8; }
+.camera-selector { display: grid; max-width: 280px; gap: 6px; margin: 16px 0; color: #526b80; font-size: 11px; font-weight: 700; }
+.camera-selector select, .room-date-control { min-width: 0; padding: 9px 10px; border: 1px solid #d7e3e7; border-radius: 8px; color: #365269; background: white; font: inherit; font-size: 12px; }
+.camera-viewport { display: grid; min-height: 330px; margin-top: 18px; place-items: center; overflow: hidden; border: 1px solid #263e50; border-radius: 12px; background: linear-gradient(145deg, #122d43, #1b3b52); }
+.camera-state { max-width: 440px; padding: 28px; color: #d8e8ed; text-align: center; }
+.camera-state strong, .camera-state p, .camera-state span { display: block; }
+.camera-state strong { color: #f5fbfc; font-family: "Space Grotesk", "Segoe UI", sans-serif; font-size: 17px; }
+.camera-state p { margin-top: 10px; color: #a9c1cc; font-size: 12px; line-height: 1.6; }
+.camera-state span { margin-top: 18px; color: #7e9eac; font-size: 10px; }
+.camera-state-link { display: inline-flex; margin-top: 17px; padding: 9px 12px; border: 1px solid rgba(186, 225, 226, .35); border-radius: 8px; color: #c8ece9; font-size: 11px; font-weight: 700; text-decoration: none; }
+.camera-stream-content { display: flex; width: 100%; height: 100%; min-height: 330px; flex-direction: column; }
+.camera-stream-content img { display: block; width: 100%; min-height: 0; flex: 1; object-fit: contain; background: #0d2537; }
+.camera-stream-footer, .camera-panel-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #8298a7; font-size: 10px; }
+.camera-stream-footer { padding: 9px 12px; background: #102b42; }
+.camera-panel-footer { margin-top: 12px; }
+.camera-panel-footer .back-button { padding: 8px 10px; font-size: 10px; }
+.camera-panel-footer button:disabled { opacity: .5; cursor: not-allowed; }
+.room-stats-panel { padding: 22px; }
+.room-detail-metric { display: flex; align-items: baseline; gap: 9px; margin: 38px 0 23px; }
+.room-detail-metric strong { color: #103c58; font-family: "Space Grotesk", "Segoe UI", sans-serif; font-size: clamp(62px, 8vw, 94px); letter-spacing: -0.08em; line-height: 0.82; }
+.room-detail-metric span { color: #718699; font-size: 13px; }
+.room-stat-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 24px; }
+.room-stat { min-width: 0; padding: 13px; border-radius: 9px; background: #f4f8f9; }
+.room-stat span, .room-stat strong { display: block; }
+.room-stat span { color: #8193a2; font-size: 10px; }
+.room-stat strong { margin-top: 6px; overflow: hidden; color: #35546a; font-size: 17px; text-overflow: ellipsis; white-space: nowrap; }
+.room-history-section { min-width: 0; margin-top: 30px; }
+.room-history-section > .section-title { margin-bottom: 14px; }
+.room-history-section .chart-card { min-width: 0; }
+
+@media (max-width: 900px) {
+  .room-monitor-layout { grid-template-columns: 1fr; }
+  .camera-viewport { min-height: 280px; }
+}
+
+@media (max-width: 700px) {
+  .room-page-header, .room-detail-header { align-items: flex-start; flex-direction: column; }
+  .room-page-actions { width: 100%; justify-content: space-between; }
+  .room-detail-times { width: 100%; min-width: 0; text-align: left; }
+  .room-camera-panel, .room-stats-panel, .room-detail-header { padding: 18px; }
+}
+
+@media (max-width: 430px) {
+  .room-page-actions { align-items: stretch; flex-direction: column; }
+  .room-page-actions .back-button { justify-content: center; }
+  .room-stat-grid { grid-template-columns: 1fr; }
+  .camera-viewport { min-height: 240px; }
 }

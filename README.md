@@ -35,6 +35,9 @@ See [docs/e2e-integration.md](docs/e2e-integration.md) for isolated API tests,
 dedicated PostgreSQL smoke testing, real-camera verification, and browser-level
 manual checks.
 
+See [docs/camera-sources.md](docs/camera-sources.md) for configuring a local
+laptop webcam, an Android phone/IP stream, or both at the same time.
+
 ## Architecture
 
 ```text

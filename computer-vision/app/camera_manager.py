@@ -2,6 +2,7 @@ import logging
 import threading
 import time
 from datetime import datetime, timezone
+from urllib.parse import urlsplit
 
 import cv2
 import requests
@@ -13,6 +14,8 @@ from app.config import (
     CAMERA_RECONNECT_DELAY,
     CAMERA_RESTART_DELAY,
     CROWD_THRESHOLD,
+    FRAME_JPEG_QUALITY,
+    FRAME_STREAM_INTERVAL,
     UPDATE_INTERVAL,
 )
 from app.detector import PersonDetector
@@ -23,6 +26,42 @@ logger = logging.getLogger(__name__)
 
 def _utc_now():
     return datetime.now(timezone.utc)
+
+
+def parse_camera_source(source_type, source):
+    """Convert a persisted source into the OpenCV value for one worker."""
+    normalized_type = str(source_type or "").strip().upper()
+    value = str(source or "").strip()
+    if not value or any(character in value for character in "\r\n\x00"):
+        raise ValueError("camera source is empty or contains control characters")
+
+    if normalized_type == "WEBCAM":
+        if not value.isdigit():
+            raise ValueError("WEBCAM source must be a non-negative device index")
+        return int(value)
+
+    if normalized_type == "IP_STREAM":
+        try:
+            parsed = urlsplit(value)
+            hostname = parsed.hostname
+            _ = parsed.port
+        except ValueError as error:
+            raise ValueError("IP_STREAM source is not a valid network URL") from error
+        if parsed.scheme.lower() not in {"http", "https", "rtsp"} or not parsed.netloc or not hostname:
+            raise ValueError("IP_STREAM source must be an HTTP, HTTPS, or RTSP URL with a host")
+        return value
+
+    raise ValueError("unsupported camera source type")
+
+
+def is_valid_frame(frame):
+    """Reject successful OpenCV reads that contain no usable image data."""
+    if frame is None:
+        return False
+    try:
+        return getattr(frame, "size", 1) > 0 and len(frame.shape) >= 2
+    except (AttributeError, TypeError):
+        return False
 
 
 class CameraWorker(threading.Thread):
@@ -46,6 +85,9 @@ class CameraWorker(threading.Thread):
             "count_posts_attempted": 0,
             "count_posts_succeeded": 0,
             "count_posts_failed": 0,
+            "frame_posts_attempted": 0,
+            "frame_posts_succeeded": 0,
+            "frame_posts_failed": 0,
             "heartbeat_attempted": 0,
             "heartbeat_succeeded": 0,
             "heartbeat_failed": 0,
@@ -142,6 +184,38 @@ class CameraWorker(threading.Thread):
             self._metric("count_posts_succeeded")
             self._timed_metric("post_seconds", "post_max_seconds", time.monotonic() - started)
 
+    def post_frame(self, frame):
+        """Relay an encoded frame; the worker remains the sole camera owner."""
+        if self.config.get("legacy"):
+            return
+        self._metric("frame_posts_attempted")
+        try:
+            encoded_ok, encoded = cv2.imencode(
+                ".jpg",
+                frame,
+                [cv2.IMWRITE_JPEG_QUALITY, FRAME_JPEG_QUALITY],
+            )
+            if not encoded_ok:
+                raise ValueError("OpenCV could not encode the camera frame")
+            response = self.http.post(
+                f"{BACKEND_URL}/api/monitoring/internal/cameras/{self.config['id']}/frame",
+                data=encoded.tobytes(),
+                headers={
+                    "Content-Type": "image/jpeg",
+                    "X-Camera-Agent-Token": self.config.get("agent_token", ""),
+                },
+                timeout=2,
+            )
+            response.raise_for_status()
+        except requests.RequestException:
+            self._metric("frame_posts_failed")
+            logger.warning("camera frame relay request failed", extra=self.context, exc_info=True)
+        except Exception:
+            self._metric("frame_posts_failed")
+            logger.exception("camera frame encoding failed", extra=self.context)
+        else:
+            self._metric("frame_posts_succeeded")
+
     def _open_capture(self, source):
         try:
             capture = cv2.VideoCapture(source)
@@ -162,12 +236,13 @@ class CameraWorker(threading.Thread):
     def run(self):
         tracker = CrowdTracker()
         try:
-            source = int(self.config["source"]) if self.config["source_type"] == "WEBCAM" else self.config["source"]
+            source = parse_camera_source(self.config.get("source_type"), self.config.get("source"))
             self.heartbeat("STARTING")
             detector = PersonDetector()
             reconnect_attempt = 0
             last_update = 0.0
             last_heartbeat = 0.0
+            last_frame_post = 0.0
             roi = None
             frame_number = 0
             processing_interval = max(int(self.config.get("processing_interval", 1)), 1)
@@ -187,7 +262,7 @@ class CameraWorker(threading.Thread):
 
                 while not self._stopping():
                     success, frame = self.camera.read()
-                    if not success or frame is None:
+                    if not success or not is_valid_frame(frame):
                         self._metric("read_failures")
                         logger.warning("camera frame read failed", extra={**self.context, "retry_attempt": reconnect_attempt + 1})
                         self.heartbeat("DISCONNECTED")
@@ -213,6 +288,10 @@ class CameraWorker(threading.Thread):
                         self._metric("frames_processed")
                         self._timed_metric("inference_seconds", "inference_max_seconds", time.monotonic() - started)
                     now = time.monotonic()
+
+                    if not self.config.get("legacy") and now - last_frame_post >= FRAME_STREAM_INTERVAL:
+                        self.post_frame(frame)
+                        last_frame_post = now
 
                     if frame_number % processing_interval == 0 and now - last_update >= UPDATE_INTERVAL:
                         try:

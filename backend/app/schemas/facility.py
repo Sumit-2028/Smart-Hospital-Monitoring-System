@@ -28,6 +28,18 @@ class CameraIn(BaseModel):
     processing_interval: int = Field(default=1, ge=1, le=60)
 
 
+class CameraUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    source_type: Literal["WEBCAM", "IP_STREAM"] | None = None
+    # A blank/omitted source on update means “keep the configured source”.
+    # This prevents the protected admin edit response from having to return
+    # a potentially credential-bearing URL to the browser.
+    source: str | None = Field(default=None, max_length=500)
+    room_id: int
+    active: bool = True
+    processing_interval: int = Field(default=1, ge=1, le=60)
+
+
 class DoctorIn(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     specialty: str = Field(min_length=1, max_length=160)

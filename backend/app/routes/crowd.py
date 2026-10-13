@@ -335,11 +335,13 @@ def latest_crowd_reading(db: Session = Depends(get_db)):
 
 @router.get("/today")
 def today_summary(
+    room_id: int | None = Query(default=None, ge=1),
     db: Session = Depends(get_db)
 ):
 
     return get_today_summary(
-        db
+        db,
+        room_id=room_id,
     )
 
 
