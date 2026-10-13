@@ -83,8 +83,8 @@ function CongestionAlerts() {
         <div className="alert-grid">
           {alerts.map((alert) => (
             <article className="card congestion-alert-card" key={alert.id}>
-              <div className="alert-heading"><h3>{alert.room_name || "Unassigned room"}</h3><span className="status-badge danger">ACTIVE</span></div>
-              <p>{alert.current_count ?? alert.peak_crowd} / {alert.threshold} people</p>
+              <div className="alert-heading"><h3>{alert.room_name || "Legacy monitoring"}</h3><span className="status-badge danger">{alert.current_reading_is_stale ? "STALE" : "ACTIVE"}</span></div>
+              {alert.current_reading_is_stale ? <p>No fresh reading for this event.</p> : <p>{alert.current_count} / {alert.threshold} people</p>}
               <p>Started: {formatISTDateTime(alert.started_at)}</p>
               <p>Duration: {formatDuration(alert.duration_seconds)}</p>
             </article>

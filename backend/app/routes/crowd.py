@@ -99,25 +99,43 @@ def _event_rows(db, room_id=None, status=None, start_date=None, end_date=None, o
 def _active_event_rows(db, room_id=None, limit=100):
     latest_reading = db.query(
         CrowdReading.room_id.label("latest_room_id"),
+        CrowdReading.camera_id.label("latest_camera_id"),
         func.max(CrowdReading.timestamp).label("latest_timestamp"),
-    ).group_by(CrowdReading.room_id).subquery()
+    ).group_by(CrowdReading.room_id, CrowdReading.camera_id).subquery()
     query = db.query(
         CongestionEvent,
         Room.name.label("room_name"),
         CrowdReading.person_count.label("current_count"),
+        CrowdReading.timestamp.label("current_reading_timestamp"),
     ).outerjoin(Room, Room.id == CongestionEvent.room_id).outerjoin(
         latest_reading,
         or_(
-            latest_reading.c.latest_room_id == CongestionEvent.room_id,
-            and_(latest_reading.c.latest_room_id.is_(None), CongestionEvent.room_id.is_(None)),
+            and_(
+                latest_reading.c.latest_room_id == CongestionEvent.room_id,
+                latest_reading.c.latest_camera_id == CongestionEvent.camera_id,
+            ),
+            and_(
+                latest_reading.c.latest_room_id.is_(None),
+                latest_reading.c.latest_camera_id.is_(None),
+                CongestionEvent.room_id.is_(None),
+                CongestionEvent.camera_id.is_(None),
+            ),
         ),
     ).outerjoin(
         CrowdReading,
         and_(
             CrowdReading.timestamp == latest_reading.c.latest_timestamp,
             or_(
-                CrowdReading.room_id == latest_reading.c.latest_room_id,
-                and_(CrowdReading.room_id.is_(None), latest_reading.c.latest_room_id.is_(None)),
+                and_(
+                    CrowdReading.room_id == latest_reading.c.latest_room_id,
+                    CrowdReading.camera_id == latest_reading.c.latest_camera_id,
+                ),
+                and_(
+                    CrowdReading.room_id.is_(None),
+                    CrowdReading.camera_id.is_(None),
+                    latest_reading.c.latest_room_id.is_(None),
+                    latest_reading.c.latest_camera_id.is_(None),
+                ),
             ),
         ),
     ).filter(CongestionEvent.resolved.is_(False), CongestionEvent.ended_at.is_(None))
@@ -137,6 +155,22 @@ def _active_event_rows(db, room_id=None, limit=100):
         if len(unique_rows) >= limit:
             break
     return len(unique_rows), unique_rows
+
+
+def _active_alert_payload(event, room_name, current_count, current_reading_timestamp):
+    """Serialize an active event without presenting an old reading as current."""
+    has_current_reading = (
+        current_reading_timestamp is not None
+        and current_reading_timestamp >= event.started_at
+    )
+    payload = _event_payload(
+        event,
+        room_name,
+        current_count if has_current_reading else None,
+    )
+    payload["current_reading_timestamp"] = serialize_utc(current_reading_timestamp)
+    payload["current_reading_is_stale"] = not has_current_reading
+    return payload
 
 
 # ==================================================
@@ -375,7 +409,13 @@ def active_congestion_alerts(
     db: Session = Depends(get_db),
 ):
     total, rows = _active_event_rows(db, room_id=room_id, limit=limit)
-    return {"items": [_event_payload(event, room_name, current_count) for event, room_name, current_count in rows], "total": total}
+    return {
+        "items": [
+            _active_alert_payload(event, room_name, current_count, current_reading_timestamp)
+            for event, room_name, current_count, current_reading_timestamp in rows
+        ],
+        "total": total,
+    }
 
 
 @router.get("/events/history")

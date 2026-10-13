@@ -409,11 +409,14 @@ a {
 
 .alert-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
   gap: 16px;
+  justify-items: start;
 }
 
 .congestion-alert-card {
+  width: 100%;
+  max-width: 420px;
   border-left: 4px solid #c25148;
 }
 

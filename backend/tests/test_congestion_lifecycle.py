@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 from app.database import Base
 from app.models.facility import Camera, Room
 from app.models.crowd import CongestionEvent, CrowdReading
-from app.routes.crowd import _active_event_rows, _event_rows
+from app.routes.crowd import _active_alert_payload, _active_event_rows, _event_rows
 from app.services.congestion_service import update_congestion_event
 
 
@@ -95,6 +95,32 @@ class CongestionLifecycleTests(unittest.TestCase):
         self.assertEqual(total, 1)
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0][2], 11)
+
+    def test_legacy_active_alert_does_not_report_pre_event_reading_as_current(self):
+        reading_time = datetime(2026, 2, 1, 4, 0)
+        event_time = datetime(2026, 2, 1, 5, 0)
+        self.session.add(CrowdReading(
+            person_count=0,
+            threshold=1,
+            status="NORMAL",
+            timestamp=reading_time,
+        ))
+        self.session.add(CongestionEvent(
+            started_at=event_time,
+            peak_crowd=1,
+            threshold=1,
+        ))
+        self.session.commit()
+
+        total, rows = _active_event_rows(self.session)
+        self.assertEqual(total, 1)
+        payload = _active_alert_payload(
+            rows[0][0], rows[0][1], rows[0][2], rows[0][3]
+        )
+        self.assertIsNone(payload["room_name"])
+        self.assertIsNone(payload["current_count"])
+        self.assertTrue(payload["current_reading_is_stale"])
+        self.assertEqual(payload["current_reading_timestamp"], "2026-02-01T04:00:00+00:00")
 
 
 if __name__ == "__main__":
